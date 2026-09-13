@@ -429,7 +429,30 @@ function spriteFrameAt(rec, ms){
   return rec.n - 1;
 }
 
-// Draw one atlas frame centred in the card's art window.
+// One small scratch canvas, reused, for turning the current frame into a
+// silhouette. Rebuilding it per repaint costs a few operations on an ~84x78
+// canvas; caching a silhouette atlas per sprite would be faster but holds
+// megabytes per card, and repaints only happen at the GIF's frame rate.
+let spriteScratch = null;
+function silhouetteOf(rec, sx, sy){
+  if(!spriteScratch){
+    spriteScratch = document.createElement("canvas");
+    spriteScratch.ctx = spriteScratch.getContext("2d");
+  }
+  const c = spriteScratch, x = c.ctx;
+  if(c.width !== rec.fw || c.height !== rec.fh){ c.width = rec.fw; c.height = rec.fh; }
+  x.clearRect(0,0,rec.fw,rec.fh);
+  x.globalCompositeOperation = "source-over";
+  x.drawImage(rec.img, sx, sy, rec.fw, rec.fh, 0, 0, rec.fw, rec.fh);
+  x.globalCompositeOperation = "source-in";      // keep alpha, replace colour
+  x.fillStyle = "#000";
+  x.fillRect(0,0,rec.fw,rec.fh);
+  x.globalCompositeOperation = "source-over";
+  return c;
+}
+
+// Draw one atlas frame centred in the card's art window, over a soft drop
+// shadow that follows the animation.
 function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   const pad = 10;
   const boxW = artW - pad*2, boxH = artH - pad*2;
@@ -440,10 +463,29 @@ function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   if(scale > 1) scale = Math.floor(scale);
   const dw = rec.fw*scale, dh = rec.fh*scale;
   const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
+  const dx = artX + pad + (boxW-dw)/2, dy = artY + pad + (boxH-dh)/2;
+
+  // Shadow: the same silhouette stamped a few times at growing offsets, which
+  // fakes a blur far more cheaply than an actual one and survives browsers
+  // without canvas filter support.
+  const sil = silhouetteOf(rec, sx, sy);
+  const off = Math.max(2, scale);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(artX, artY, artW, artH); ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  const passes = [[0.7,1.0,0.20],[1.15,1.7,0.15],[1.7,2.5,0.10]];
+  for(let i=0;i<passes.length;i++){
+    const P = passes[i];
+    ctx.globalAlpha = P[2];
+    ctx.drawImage(sil, 0,0,rec.fw,rec.fh,
+                  dx + off*P[0], dy + off*P[1], dw, dh);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(rec.img, sx, sy, rec.fw, rec.fh,
-                artX + pad + (boxW-dw)/2, artY + pad + (boxH-dh)/2, dw, dh);
+  ctx.drawImage(rec.img, sx, sy, rec.fw, rec.fh, dx, dy, dw, dh);
   ctx.restore();
 }
 
@@ -1364,6 +1406,29 @@ void main(){
   // white; foil should catch light, not glow.
   col += pow(1.0-facing, 4.0) * 0.045;
 
+  // Bevel. A printed card is not a flat decal: the last millimetre catches
+  // light on one side and falls into shadow on the other. Cheap here because
+  // the distance to the edge is just a UV term.
+  vec2 fromEdge = min(vUv, 1.0-vUv);
+  float edgeD = min(fromEdge.x*(1.0/0.030), fromEdge.y*(1.0/0.021));
+  float bevel = 1.0 - clamp(edgeD, 0.0, 1.0);
+  // Light comes from upper-left, so the top and left edges catch and the
+  // bottom and right fall away.
+  vec2 dir = normalize(vec2(0.55, -0.85) + vec2(uTilt.y, -uTilt.x)*0.6);
+  vec2 toEdge = normalize((vUv - 0.5) + vec2(1e-5));
+  float lit = dot(toEdge, dir);
+  col += bevel * lit * 0.16;
+  col *= 1.0 - bevel * 0.10;
+
+  // Specular off the key light, so the whole face brightens through an angle
+  // instead of being uniformly flat.
+  vec3 L = normalize(vec3(0.45, 0.72, 0.86));
+  vec3 H = normalize(L + V);
+  // Broad, not tight: on a flat card N is constant and only V varies, so a
+  // high exponent snaps from lit to unlit across the face and draws a hard
+  // diagonal edge. A low one reads as a gentle sheen.
+  col += pow(clamp(dot(N,H),0.0,1.0), 9.0) * 0.055;
+
   float m = texture2D(uMask, vUv).r * uHolo;
   if(m > 0.003){
     // Everything below is driven by the reflection vector, so the foil only
@@ -1406,6 +1471,31 @@ void main(){
 // Advance one card's sprite animation. Only the art window is repainted, and
 // only when the frame actually changes — GIF frames land around 10-20fps, so
 // this re-uploads the card texture far less often than once per rendered frame.
+// A single soft quad that tracks whichever card is in focus, rather than one
+// per card: ten stacked shadows muddy into a grey smear, and a shadow parented
+// to the card would swing round in front of it on the flip.
+let cardShadow = null;
+function ensureCardShadow(){
+  if(cardShadow) return cardShadow;
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d");
+  const g = x.createRadialGradient(S/2,S/2,S*0.10, S/2,S/2,S*0.50);
+  g.addColorStop(0,   "rgba(0,0,0,0.60)");
+  g.addColorStop(0.55,"rgba(0,0,0,0.26)");
+  g.addColorStop(1,   "rgba(0,0,0,0)");
+  x.fillStyle = g; x.fillRect(0,0,S,S);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  cardShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(CARD_MESH_W*1.6, CARD_MESH_H*1.45),
+    new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false})
+  );
+  cardShadow.renderOrder = -1;
+  cardShadow.visible = false;
+  scene.add(cardShadow);
+  return cardShadow;
+}
+
 function stepCardArt(card, tSeconds){
   const a = card.art;
   if(!a) return;
@@ -1436,11 +1526,14 @@ function makeCardMesh(card){
   });
   const backTex = new THREE.CanvasTexture(buildCardBack());
   backTex.minFilter = THREE.LinearFilter; backTex.generateMipmaps = false;
-  const backMat = new THREE.MeshBasicMaterial({map:backTex});
+  const backMat = new THREE.MeshPhongMaterial({map:backTex, shininess:26, specular:0x3a4358});
   // The sides used to be unlit near-white (#f2efe6), so they rendered brighter
   // than the shaded front and ringed every card in glowing white. Use the
-  // card's own dark border tone, which reads as the printed edge of card stock.
-  const edgeMat = new THREE.MeshBasicMaterial({color: new THREE.Color(faces.edge || "#6b6459")});
+  // card's own dark border tone, and shade it: an unlit side gives the card
+  // away as a flat box the moment it turns.
+  const edgeMat = new THREE.MeshPhongMaterial({
+    color: new THREE.Color(faces.edge || "#6b6459"), shininess: 18, specular: 0x55504a
+  });
 
   const geo = new THREE.BoxGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D);
   const mesh = new THREE.Mesh(geo, [edgeMat,edgeMat,edgeMat,edgeMat,frontMat,backMat]);
@@ -2108,8 +2201,20 @@ function animate(){
   tilt.y = lerp(tilt.y, tilt.ty, 0.16);
   const mo = Motion.step();
 
+  const shadow = ensureCardShadow();
+  let shadowOn = false;
   cards.forEach((card,i)=>{
     if(!card.pivot || !card.pivot.visible) return;
+    if(i===index && state==="viewing"){
+      // Sit behind and below the card, drifting with the tilt so the card
+      // reads as lifted off the background rather than pasted to it.
+      const p = card.pivot.position, sc = card.pivot.scale.x;
+      shadow.position.set(p.x + 0.06 + tilt.y*0.12, p.y - 0.12 - Math.abs(tilt.x)*0.05, p.z - 0.60);
+      // Far enough back that perspective shrinks it, so scale up to compensate.
+      shadow.scale.setScalar(sc * 1.10);
+      shadow.material.opacity = 0.9*sc;
+      shadowOn = true;
+    }
     // Only the focused card shows its front; the rest of the stack sits behind
     // it face-down. Stepping all ten would re-upload ten card textures a frame
     // for art nobody can see.
@@ -2129,6 +2234,7 @@ function animate(){
     }
   });
 
+  shadow.visible = shadowOn;
   renderer.render(scene,camera);
 }
 animate();
