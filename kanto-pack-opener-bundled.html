@@ -106,6 +106,12 @@
   #binder .bhead{align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
   #binder h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
   #binder .lede{margin:5px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+  #binderFilters{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 11px}
+  .chip{pointer-events:auto;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);
+    color:var(--paper);font:inherit;font-size:12px;font-weight:700;letter-spacing:.02em;
+    padding:7px 13px;border-radius:999px;cursor:pointer;transition:background .12s,border-color .12s}
+  .chip.on{background:rgba(66,232,216,.20);border-color:rgba(66,232,216,.7);color:#8ef7ea}
+  .chip .c{opacity:.6;margin-left:5px;font-weight:600}
   #binderGrid{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:grid;gap:8px;
     grid-template-columns:repeat(auto-fill,minmax(86px,1fr));
     /* Fixed row height rather than aspect-ratio: with fractional column widths
@@ -129,8 +135,11 @@
   #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(9,7,24,.97);backdrop-filter:blur(10px);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
   #binderDetail[hidden]{display:none}
-  #binderDetail img{max-width:min(74vw,340px);max-height:62vh;border-radius:11px;
-    box-shadow:0 26px 60px -22px rgba(0,0,0,.9)}
+  #binderStage{width:min(78vw,360px);height:min(60vh,480px);touch-action:none;cursor:grab}
+  #binderStage:active{cursor:grabbing}
+  #binderStage canvas{display:block;width:100%;height:100%}
+  #binderActions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
+  #binderMeta .copies{margin-top:7px;font-size:12px;opacity:.85}
   #binderDetail .meta{text-align:center;color:var(--muted);font-size:12.5px;line-height:1.65}
   #binderDetail .meta b{color:var(--paper);font-size:15px;display:block;margin-bottom:3px}
   #binderEmpty{color:var(--muted);font-size:13px;line-height:1.6;padding:8px 2px}
@@ -183,8 +192,14 @@
     </div>
     <button class="iconbtn" id="binderClose" aria-label="Close the binder">✕</button>
   </div>
+  <div id="binderFilters">
+    <button class="chip on" data-filter="all">All</button>
+    <button class="chip" data-filter="owned">Collected</button>
+    <button class="chip" data-filter="dupes">Duplicates</button>
+    <button class="chip" data-filter="holo">Holos</button>
+  </div>
   <div id="binderGrid"></div>
-  <div id="binderDetail" hidden></div>
+  <div id="binderDetail" hidden><div id="binderStage"></div><div id="binderMeta"></div><div id="binderActions"></div></div>
 </div>
 
 <div id="boot"><div class="bootbox"><b id="bootTitle">Loading the pack…</b><div id="bootStatus">Getting the 3D engine ready.</div><div class="bootbar"><i id="bootProgress"></i></div><div id="bootPercent">0%</div></div></div>
@@ -2220,8 +2235,12 @@ const UI = {
   sumLede: document.getElementById("sumLede"),
   binder: document.getElementById("binder"),
   binderGrid: document.getElementById("binderGrid"),
+  binderFilters: document.getElementById("binderFilters"),
   binderStats: document.getElementById("binderStats"),
   binderDetail: document.getElementById("binderDetail"),
+  binderStage: document.getElementById("binderStage"),
+  binderMeta: document.getElementById("binderMeta"),
+  binderActions: document.getElementById("binderActions"),
   binderBtn: document.getElementById("binderbtn"),
   binderClose: document.getElementById("binderClose"),
   binderFromSummary: document.getElementById("binderFromSummary"),
@@ -2458,6 +2477,11 @@ const Binder = (function(){
       if(!id) return;
       const c = data.cards[String(id)] || {n:0, best:"none", first:0};
       c.n++;
+      // Tally each finish, not just the best one, so duplicates can say what
+      // they are rather than only how many. Records written before this
+      // existed are backfilled on read.
+      if(!c.f) c.f = {};
+      c.f[finish] = (c.f[finish] || 0) + 1;
       if(RANK[finish] > RANK[c.best]) c.best = finish;
       if(!c.first) c.first = Date.now();
       data.cards[String(id)] = c;
@@ -2465,15 +2489,25 @@ const Binder = (function(){
       save();
     },
     countPack(){ data.packs++; save(); },
-    get(id){ return data.cards[String(id)] || null; },
+    get(id){
+      const c = data.cards[String(id)];
+      if(!c) return null;
+      // Older records only knew the count and the best finish. Attribute them
+      // all to that finish: it is the only reading the data supports.
+      if(!c.f) c.f = {[c.best]: c.n};
+      return c;
+    },
     stats(){
       const owned = Object.keys(data.cards).length;
-      let holo = 0, rev = 0;
+      let holo = 0, rev = 0, dupes = 0, spare = 0;
       for(const k in data.cards){
-        if(data.cards[k].best === "rare") holo++;
-        else if(data.cards[k].best === "reverse") rev++;
+        const c = data.cards[k];
+        if(c.best === "rare") holo++;
+        else if(c.best === "reverse") rev++;
+        if(c.n > 1){ dupes++; spare += c.n - 1; }
       }
-      return {owned, total:DEX_ORDER.length, packs:data.packs, pulls:data.pulls, holo, rev, usable};
+      return {owned, total:DEX_ORDER.length, packs:data.packs, pulls:data.pulls,
+              holo, rev, dupes, spare, usable};
     }
   };
 })();
@@ -2495,9 +2529,22 @@ function spriteThumbStyle(id, box){
   };
 }
 
+let binderFilter = "all";
+const FINISH_LABEL = {none:"Normal", reverse:"Reverse holo", rare:"Holo"};
+
 function renderBinder(){
   const grid = UI.binderGrid;
   const st = Binder.stats();
+  // Counts on the chips, so it is obvious whether a filter has anything in it
+  // before you tap it.
+  const counts = {all: st.total, owned: st.owned, dupes: st.dupes, holo: st.holo + st.rev};
+  UI.binderFilters.querySelectorAll(".chip").forEach(ch=>{
+    const f = ch.dataset.filter;
+    ch.classList.toggle("on", f === binderFilter);
+    let c = ch.querySelector(".c");
+    if(!c){ c = document.createElement("span"); c.className="c"; ch.appendChild(c); }
+    c.textContent = counts[f];
+  });
   const pct = Math.round(st.owned/st.total*100);
   UI.binderStats.innerHTML =
     `<b style="color:var(--paper)">${st.owned}/${st.total}</b> collected · ${pct}% · ` +
@@ -2506,9 +2553,14 @@ function renderBinder(){
     (st.usable ? "" : `<br><span style="color:#ffb4a1">Storage is unavailable, so this won't be saved.</span>`);
 
   const frag = document.createDocumentFragment();
+  let shown = 0;
   DEX_ORDER.forEach((name, i)=>{
     const id = i+1;
     const have = Binder.get(id);
+    if(binderFilter === "owned" && !have) return;
+    if(binderFilter === "dupes" && !(have && have.n > 1)) return;
+    if(binderFilter === "holo" && !(have && have.best !== "none")) return;
+    shown++;
     const slot = document.createElement("div");
     slot.className = "slot " + (have ? "own" : "miss")
       + (have && have.best==="rare" ? " holo" : have && have.best==="reverse" ? " rev" : "");
@@ -2544,45 +2596,138 @@ function renderBinder(){
     frag.appendChild(slot);
   });
   grid.innerHTML = "";
+  if(!shown){
+    const empty = document.createElement("div");
+    empty.id = "binderEmpty";
+    empty.textContent = binderFilter === "dupes"
+      ? "No duplicates yet. Pull the same Pokémon twice and it will show up here."
+      : binderFilter === "holo"
+        ? "No holos yet. Every pack has a reverse holo, and about one in three has a holo rare."
+        : "Nothing here yet.";
+    grid.appendChild(empty);
+  }
   grid.appendChild(frag);
+}
+
+// A real card, not a picture of one. The holo is a shader on the card's own
+// material, so a flat canvas render of a holo pull looked exactly like a normal
+// one -- there was no way to actually see what you had pulled. This builds the
+// same mesh the pack uses, in its own small renderer, and lets you tilt it.
+let binderView = null;
+function closeBinderCard(){
+  if(!binderView) return;
+  cancelAnimationFrame(binderView.raf);
+  const { renderer, pivot, card } = binderView;
+  pivot.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+  // Only what this view made. The back material, its texture and the room map
+  // are shared with the pack and must outlive this.
+  if(card.frontMat){
+    const u = card.frontMat.uniforms;
+    if(u.uMap.value) u.uMap.value.dispose();
+    if(u.uMask.value) u.uMask.value.dispose();
+    card.frontMat.dispose();
+  }
+  if(card.spriteTex) card.spriteTex.dispose();
+  if(binderView.edgeMat) binderView.edgeMat.dispose();
+  renderer.dispose();
+  if(renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+  binderView = null;
+}
+
+function openBinderCard(mon, finish){
+  closeBinderCard();
+  const host = UI.binderStage;
+  host.innerHTML = "";
+  const w = host.clientWidth || 340, h = host.clientHeight || 460;
+
+  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(w, h, false);
+  host.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+  const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(2.5,4,5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xff7fd0, 0.45); rim.position.set(-3,-1,2); scene.add(rim);
+
+  const camera = new THREE.PerspectiveCamera(36, w/h, 0.1, 100);
+  camera.position.z = CARD_MESH_H * 1.42;
+
+  const card = {mon, stats: statsFor(mon), holo: finish};
+  const pivot = makeCardMesh(card);
+  scene.add(pivot);
+  card.frontMat.uniforms.uHolo.value = finish === "none" ? 0 : 1;
+
+  const view = {renderer, scene, camera, pivot, card, raf:0,
+                edgeMat: card.mesh && card.mesh.material && card.mesh.material[2],
+                tx:0, ty:0, cx:0, cy:0, drag:false};
+  binderView = view;
+
+  const set = (px,py)=>{
+    const r = host.getBoundingClientRect();
+    view.ty = ((px - r.left)/r.width  - 0.5) *  1.15;
+    view.tx = ((py - r.top )/r.height - 0.5) *  0.85;
+  };
+  host.addEventListener("pointerdown", e=>{ view.drag=true; host.setPointerCapture(e.pointerId); set(e.clientX,e.clientY); });
+  host.addEventListener("pointermove", e=>{ if(view.drag) set(e.clientX,e.clientY); });
+  host.addEventListener("pointerup",   ()=>{ view.drag=false; });
+  host.addEventListener("pointercancel",()=>{ view.drag=false; });
+
+  const clock = new THREE.Clock();
+  (function tick(){
+    view.raf = requestAnimationFrame(tick);
+    const t = clock.getElapsedTime();
+    // Drifts on its own when untouched, so a holo shows what it is without
+    // the viewer having to know to drag it.
+    const idleY = view.drag ? 0 : Math.sin(t*0.7)*0.30;
+    const idleX = view.drag ? 0 : Math.sin(t*0.52)*0.10;
+    view.cx = lerp(view.cx, view.tx + idleX, 0.10);
+    view.cy = lerp(view.cy, view.ty + idleY, 0.10);
+    pivot.rotation.y = view.cy;
+    pivot.rotation.x = view.cx;
+    card.frontMat.uniforms.uTime.value = t;
+    card.frontMat.uniforms.uTilt.value.set(view.cy*1.5, view.cx*1.5);
+    stepCardArt(card, t);
+    renderer.render(scene, camera);
+  })();
 }
 
 function showBinderDetail(id, name, have){
   const meta = window.SPRITE_META && window.SPRITE_META[id];
-  const d = UI.binderDetail;
-  d.innerHTML = "";
-  // Draw the card itself rather than storing an image per pull: the binder
-  // keeps counts, and the face is cheap to rebuild from the same code the
-  // pack uses.
   const mon = MON_BY_NAME[name];
-  if(mon){
-    const faces = buildCardFace({mon, stats:statsFor(mon), holo:have.best}, {flatSprite:true});
-    const img = document.createElement("img");
-    img.alt = name;
-    try { img.src = faces.front.toDataURL("image/png"); d.appendChild(img); } catch(e){}
-  }
-  const info = document.createElement("div");
-  info.className = "meta";
+  UI.binderDetail.hidden = false;
+  if(mon) openBinderCard(mon, have.best);
+
   const when = have.first ? new Date(have.first).toLocaleDateString() : "";
-  info.innerHTML = `<b>${name}</b>No. ${String(id).padStart(3,"0")}`
+  // What the copies actually are, not just how many.
+  const order = ["rare","reverse","none"];
+  const copies = order.filter(f => have.f && have.f[f])
+                      .map(f => `${have.f[f]} ${FINISH_LABEL[f].toLowerCase()}`)
+                      .join(" · ");
+  UI.binderMeta.innerHTML =
+    `<b>${name}</b>No. ${String(id).padStart(3,"0")}`
     + (meta && meta.genus ? ` · ${meta.genus}` : "")
-    + `<br>${have.n} pulled${when ? " · first on "+when : ""}`
-    + (have.best!=="none" ? `<br><span style="color:${have.best==="rare"?"var(--gold)":"var(--foil)"}">`
-        + (have.best==="rare"?"Holo":"Reverse holo") + ` copy in the binder</span>` : "");
-  d.appendChild(info);
-  const close = document.createElement("button");
-  close.className = "cta ghost"; close.textContent = "Back to the binder";
-  close.addEventListener("click", ()=>{ Audio2.tap(); d.hidden = true; });
-  d.appendChild(close);
-  d.hidden = false;
+    + `<br>${have.n} ${have.n===1?"copy":"copies"}${when ? " · first on "+when : ""}`
+    + (copies ? `<div class="copies">${copies}</div>` : "")
+    + (have.best !== "none"
+        ? `<div class="copies" style="color:${have.best==="rare"?"var(--gold)":"var(--foil)"}">`
+          + `Drag the card to move the foil</div>`
+        : "");
+
+  UI.binderActions.innerHTML = "";
+  const back = document.createElement("button");
+  back.className = "cta ghost"; back.textContent = "Back to the binder";
+  back.addEventListener("click", ()=>{ Audio2.tap(); closeBinderCard(); UI.binderDetail.hidden = true; });
+  UI.binderActions.appendChild(back);
 }
 
 function openBinder(){
   renderBinder();
+  closeBinderCard();
   UI.binderDetail.hidden = true;
   UI.binder.classList.add("on");
 }
-function closeBinder(){ UI.binder.classList.remove("on"); }
+function closeBinder(){ closeBinderCard(); UI.binder.classList.remove("on"); }
 
 function flipCurrent(){
   const card = cards[index];
@@ -2804,11 +2949,18 @@ UI.action.addEventListener("click", ()=>{
 UI.again.addEventListener("click", ()=>{ Audio2.tap(); newPack(); });
 UI.binderBtn.addEventListener("click", ()=>{ Audio2.tap(); openBinder(); });
 UI.binderClose.addEventListener("click", ()=>{ Audio2.tap(); closeBinder(); });
+UI.binderFilters.addEventListener("click", e=>{
+  const chip = e.target.closest(".chip");
+  if(!chip) return;
+  Audio2.tap();
+  binderFilter = chip.dataset.filter;
+  renderBinder();
+});
 UI.binderFromSummary.addEventListener("click", ()=>{ Audio2.tap(); openBinder(); });
 window.addEventListener("keydown", e=>{
   if(e.key !== "Escape") return;
   if(!UI.binder.classList.contains("on")) return;
-  if(!UI.binderDetail.hidden) UI.binderDetail.hidden = true; else closeBinder();
+  if(!UI.binderDetail.hidden){ closeBinderCard(); UI.binderDetail.hidden = true; } else closeBinder();
 });
 const Motion = (function(){
   let enabled=false, receiving=false, base=null;

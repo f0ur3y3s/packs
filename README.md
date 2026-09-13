@@ -177,12 +177,24 @@ Every read and write is wrapped: `localStorage` throws outright in Safari's
 private mode. The binder then runs in memory for the session and says so in its
 header rather than failing.
 
-The grid is all 151 slots in dex order — caught ones in colour, the rest as
+Filter chips carry live counts: All, Collected, Duplicates and Holos. The grid
+is all 151 slots in dex order — caught ones in colour, the rest as
 silhouettes. Thumbnails are CSS backgrounds over the sprite sheet sized to show
-frame 0, so 151 of them cost no canvases. Opening a slot rebuilds the full card
-through the same `buildCardFace` the pack uses; `statsFor` is seeded from the
-Pokémon's name, so the card is identical to the one pulled and nothing about it
-needs storing.
+frame 0, so 151 of them cost no canvases. Opening a slot builds a **real card** — the same mesh the pack uses, in its own
+small renderer, which drifts on its own and can be dragged. It has to be the
+mesh and not a picture of one: the holo is a shader on the card's material, so a
+flat canvas render of a holo pull looked exactly like a normal card and there
+was no way to see what you had actually pulled. The view is torn down on close
+(geometry, front and mask textures, sprite texture, its own renderer), leaving
+the back material, its texture and the room map alone since the pack shares
+those.
+
+`statsFor` is seeded from the Pokémon's name, so the card is identical to the
+one pulled and nothing about it needs storing. Each slot also tallies the finish
+of every copy, not just the best one, so three Charizards can read "1 holo ·
+2 normal" rather than just "×3". Records written before that tally existed are
+backfilled on read by attributing every copy to the best finish, which is the
+only reading the old data supports.
 
 ## Planned work
 
