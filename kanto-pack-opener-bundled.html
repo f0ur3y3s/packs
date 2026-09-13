@@ -1755,6 +1755,22 @@ void main(){
   // diagonal edge. A low one reads as a gentle sheen.
   col += pow(clamp(dot(N,H),0.0,1.0), 9.0) * 0.055;
 
+  // Print relief. The luminance gradient of the artwork stands in for a height
+  // map, so borders, rules and type catch the key light on one side and fall
+  // away on the other. Held right down inside the art window: the sprite is
+  // pixel art with hard edges everywhere and embossing all of them turns it
+  // into foil lettering.
+  {
+    vec2 tx = vec2(1.6/512.0, 1.6/716.0);
+    float hl = dot(texture2D(uMap, uvS - vec2(tx.x,0.0)).rgb, vec3(0.299,0.587,0.114));
+    float hr = dot(texture2D(uMap, uvS + vec2(tx.x,0.0)).rgb, vec3(0.299,0.587,0.114));
+    float hd = dot(texture2D(uMap, uvS - vec2(0.0,tx.y)).rgb, vec3(0.299,0.587,0.114));
+    float hu = dot(texture2D(uMap, uvS + vec2(0.0,tx.y)).rgb, vec3(0.299,0.587,0.114));
+    vec2 lit2 = normalize(vec2(-0.55, 0.84) + vec2(uTilt.y, -uTilt.x)*0.45);
+    float emboss = dot(vec2(hr-hl, hu-hd), lit2);
+    col += emboss * mix(0.30, 0.07, inArt);
+  }
+
   // Reflected room. Weighted by fresnel, so it is barely there face-on and
   // builds as the card turns away -- which is how a laminated card behaves,
   // and it is what stops the surface reading as lit-but-nowhere.
@@ -2007,6 +2023,20 @@ function makeCardMesh(card){
     color: new THREE.Color(faces.edge || "#6b6459"), shininess: 18, specular: 0x55504a,
     envMap: roomEnvTexture(), reflectivity: 0.30, combine: THREE.MixOperation
   });
+  // Card stock is a pale core between two printed faces, and that is what you
+  // actually see along the edge of a real card. Keyed off the normal's z rather
+  // than the vertex's: the bow moves z by more than the card is thick, but the
+  // bevels still face partly forward or back while the straight side does not.
+  edgeMat.onBeforeCompile = shader => {
+    shader.vertexShader = "varying float vFace;\n" + shader.vertexShader.replace(
+      "#include <begin_vertex>", "#include <begin_vertex>\n  vFace = normal.z;");
+    shader.fragmentShader = "varying float vFace;\n" + shader.fragmentShader.replace(
+      "#include <color_fragment>",
+      "#include <color_fragment>\n  {\n" +
+      "    float core = 1.0 - smoothstep(0.06, 0.42, abs(vFace));\n" +
+      "    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95,0.93,0.86), core*0.88);\n" +
+      "  }");
+  };
 
   if(card.art){
     card.artTex = new THREE.CanvasTexture(card.art.canvas);
