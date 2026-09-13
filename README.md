@@ -190,6 +190,20 @@ Habitat scenes are built and are the only background the card draws. See
 `BACKGROUNDS.md` for the reasoning and what is left — richer time-of-day, and
 splitting scene and sprite onto separate quads so they parallax apart.
 
+## Card back
+
+Drawn in `buildCardBack`, in the visual language of a classic trading-card back:
+royal blue field, sunburst, engraved rings, heavy cream frame with a gold rule
+and corner diamonds, and a central medallion carrying this set's own six-point
+star and ribbon. It is an original design using the Kanto Series marks — the
+real card back's ball device and wordmark are trademarks and are not
+reproduced here.
+
+One canvas, one texture and one material shared by all ten cards. Its material
+is deliberately tinted below white: the scene runs ambient 0.72 plus two
+directionals, so at full white the back blows out. The card face does not show
+this because its shader samples the texture directly instead of being lit.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.

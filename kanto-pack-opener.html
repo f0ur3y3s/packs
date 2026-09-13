@@ -1208,43 +1208,114 @@ function buildCardBack(){
   if(BACK_CANVAS) return BACK_CANVAS;
   const c=document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
   const ctx=c.getContext("2d"); const R=30;
+  const cx=CARD_W/2, cy=CARD_H/2;
+
+  // Built in the visual language of a classic trading-card back -- royal blue
+  // field, sunburst, heavy cream frame, central medallion -- but drawn from
+  // scratch with this app's own Kanto Series marks. The real card back's ball
+  // device and wordmark are trademarks, and not ours to reproduce.
   rr(ctx,0,0,CARD_W,CARD_H,R);
-  const g=ctx.createLinearGradient(0,0,CARD_W,CARD_H);
-  g.addColorStop(0,"#2b2470"); g.addColorStop(.5,"#171043"); g.addColorStop(1,"#3a1a5e");
-  ctx.fillStyle=g; ctx.fill();
+  const field=ctx.createLinearGradient(0,0,CARD_W*0.35,CARD_H);
+  field.addColorStop(0,"#2a4fae"); field.addColorStop(.48,"#16307e"); field.addColorStop(1,"#0d1c53");
+  ctx.fillStyle=field; ctx.fill();
   ctx.save(); rr(ctx,0,0,CARD_W,CARD_H,R); ctx.clip();
 
-  // guilloche rings
-  ctx.globalAlpha=.35; ctx.strokeStyle="#6ee7dc"; ctx.lineWidth=1.2;
-  for(let i=0;i<26;i++){ ctx.beginPath();
-    ctx.ellipse(CARD_W/2, CARD_H/2, 40+i*13, 60+i*17, 0,0,7); ctx.stroke(); }
-  ctx.globalAlpha=.2; ctx.strokeStyle="#ff7fc0";
-  for(let i=0;i<18;i++){ ctx.beginPath();
-    ctx.ellipse(CARD_W/2, CARD_H/2, 30+i*19, 44+i*12, Math.PI/4,0,7); ctx.stroke(); }
+  // Sunburst behind everything.
+  ctx.save(); ctx.translate(cx,cy);
+  for(let i=0;i<28;i++){
+    ctx.rotate(Math.PI*2/28);
+    ctx.globalAlpha = i%2 ? 0.075 : 0.028;
+    ctx.fillStyle="#9fc4ff";
+    ctx.beginPath(); ctx.moveTo(0,0);
+    ctx.arc(0,0,CARD_H*0.9, -0.055, 0.055); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore(); ctx.globalAlpha=1;
+
+  // Fine concentric rings, the guilloche of an engraved back.
+  ctx.globalAlpha=.16; ctx.strokeStyle="#bcd8ff"; ctx.lineWidth=1;
+  for(let i=0;i<30;i++){
+    ctx.beginPath(); ctx.ellipse(cx,cy, 34+i*15, 46+i*19, 0,0,7); ctx.stroke();
+  }
   ctx.globalAlpha=1;
 
-  // border frame
-  ctx.strokeStyle="#f3efe4"; ctx.lineWidth=16;
-  rr(ctx,20,20,CARD_W-40,CARD_H-40,20); ctx.stroke();
-  ctx.strokeStyle="rgba(110,231,220,.7)"; ctx.lineWidth=3;
-  rr(ctx,38,38,CARD_W-76,CARD_H-76,12); ctx.stroke();
+  // Frame: cream band, gold rule inside it, deeper blue panel within.
+  ctx.strokeStyle="#f4efe1"; ctx.lineWidth=20;
+  rr(ctx,22,22,CARD_W-44,CARD_H-44,22); ctx.stroke();
+  ctx.strokeStyle="#d8b048"; ctx.lineWidth=3;
+  rr(ctx,36,36,CARD_W-72,CARD_H-72,15); ctx.stroke();
+  ctx.strokeStyle="rgba(255,255,255,.30)"; ctx.lineWidth=1.5;
+  rr(ctx,44,44,CARD_W-88,CARD_H-88,11); ctx.stroke();
 
-  // emblem
-  const cx=CARD_W/2, cy=CARD_H/2;
-  const eg=ctx.createRadialGradient(cx-30,cy-40,10,cx,cy,180);
-  eg.addColorStop(0,"#8ef7ea"); eg.addColorStop(.55,"#3fc9dd"); eg.addColorStop(1,"#7a2fb0");
-  ctx.fillStyle=eg;
+  // Corner flourishes on the inner rule.
+  const inset=44, corners=[[inset,inset],[CARD_W-inset,inset],[inset,CARD_H-inset],[CARD_W-inset,CARD_H-inset]];
+  corners.forEach(([x,y])=>{
+    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4);
+    ctx.fillStyle="#d8b048"; ctx.fillRect(-7,-7,14,14);
+    ctx.fillStyle="#f4efe1"; ctx.fillRect(-3.5,-3.5,7,7);
+    ctx.restore();
+  });
+
+  // Medallion.
+  const halo=ctx.createRadialGradient(cx,cy,20,cx,cy,178);
+  halo.addColorStop(0,"rgba(255,241,196,.34)"); halo.addColorStop(1,"rgba(255,241,196,0)");
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(cx,cy,178,0,7); ctx.fill();
+
+  ctx.beginPath(); ctx.arc(cx,cy,112,0,7);
+  const ring=ctx.createLinearGradient(cx-112,cy-112,cx+112,cy+112);
+  ring.addColorStop(0,"#ffe9a8"); ring.addColorStop(.5,"#d8b048"); ring.addColorStop(1,"#8a6510");
+  ctx.fillStyle=ring; ctx.fill();
+  ctx.strokeStyle="rgba(255,255,255,.65)"; ctx.lineWidth=2; ctx.stroke();
+
+  // Beading around the ring.
+  for(let i=0;i<32;i++){
+    const a=i*Math.PI*2/32;
+    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*98, cy+Math.sin(a)*98, 3.1, 0, 7);
+    ctx.fillStyle = i%2 ? "#fff6d8" : "#a97f1d"; ctx.fill();
+  }
+
+  ctx.beginPath(); ctx.arc(cx,cy,86,0,7);
+  const disc=ctx.createLinearGradient(cx,cy-86,cx,cy+86);
+  disc.addColorStop(0,"#1d3d96"); disc.addColorStop(1,"#0c1a4c");
+  ctx.fillStyle=disc; ctx.fill();
+
+  // The six-point star this set already uses on its pack and pips.
+  ctx.save(); ctx.translate(cx,cy);
   ctx.beginPath();
-  for(let i=0;i<12;i++){ const a=-Math.PI/2+i*Math.PI/6; const rad=i%2?78:150;
-    ctx.lineTo(cx+Math.cos(a)*rad, cy+Math.sin(a)*rad); }
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=5; ctx.stroke();
-  ctx.fillStyle="#16103a"; ctx.beginPath(); ctx.arc(cx,cy,56,0,7); ctx.fill();
-  ctx.strokeStyle="#f3efe4"; ctx.lineWidth=6; ctx.stroke();
-  ctx.fillStyle="#f3efe4"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.font="800 44px "+CARD_FONT; ctx.fillText("K", cx, cy+3);
-  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  for(let i=0;i<12;i++){
+    const a=-Math.PI/2+i*Math.PI/6, rad=i%2?30:74;
+    ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
+  }
+  ctx.closePath();
+  const star=ctx.createLinearGradient(-74,-74,74,74);
+  star.addColorStop(0,"#8ef7ea"); star.addColorStop(.55,"#42e8d8"); star.addColorStop(1,"#1e9fb8");
+  ctx.fillStyle=star; ctx.fill();
+  ctx.strokeStyle="rgba(255,255,255,.8)"; ctx.lineWidth=3; ctx.stroke();
+  ctx.restore();
 
+  ctx.beginPath(); ctx.arc(cx,cy,31,0,7);
+  ctx.fillStyle="#0c1a4c"; ctx.fill();
+  ctx.strokeStyle="#f4efe1"; ctx.lineWidth=4; ctx.stroke();
+  ctx.fillStyle="#f4efe1"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font="800 34px "+CARD_FONT; ctx.fillText("K", cx, cy+2);
+
+  // Ribbon under the medallion.
+  const bw=286, bh=46, bx=cx-bw/2, by=cy+126;
+  ctx.fillStyle="#0c1a4c";
+  ctx.beginPath();
+  ctx.moveTo(bx,by); ctx.lineTo(bx+bw,by); ctx.lineTo(bx+bw-16,by+bh/2); ctx.lineTo(bx+bw,by+bh);
+  ctx.lineTo(bx,by+bh); ctx.lineTo(bx+16,by+bh/2); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle="#d8b048"; ctx.lineWidth=2.5; ctx.stroke();
+  ctx.fillStyle="#ffe9a8"; ctx.font="800 21px "+CARD_FONT;
+  ctx.letterSpacing && (ctx.letterSpacing = "3px");
+  ctx.fillText("KANTO SERIES", cx, by+bh/2+1);
+  ctx.letterSpacing && (ctx.letterSpacing = "0px");
+
+  // Small line above the medallion, for balance.
+  ctx.fillStyle="rgba(255,241,196,.75)"; ctx.font="700 13px "+CARD_FONT;
+  ctx.fillText("COLLECT ALL 151", cx, cy-150);
+
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
   ctx.restore();
   BACK_CANVAS=c; return c;
 }
@@ -1728,7 +1799,14 @@ function sharedBackMaterial(){
   if(backMat) return backMat;
   const tex = new THREE.CanvasTexture(buildCardBack());
   tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
-  backMat = new THREE.MeshPhongMaterial({map:tex, shininess:26, specular:0x3a4358});
+  // Scaled down deliberately. The scene runs ambient 0.72 plus two
+  // directionals, which together land well above 1.0, and at full white the
+  // back blew out: deep blue washed to pale, gold to near-white. The card face
+  // does not show this because its shader samples the texture directly rather
+  // than being lit.
+  backMat = new THREE.MeshPhongMaterial({
+    map: tex, color: 0x9fa2ab, shininess: 16, specular: 0x20242e
+  });
   return backMat;
 }
 
@@ -2731,6 +2809,7 @@ animate();
 // sprites then load in the background, and the pack is rebuilt with the real
 // art once they arrive — as long as it hasn't been torn open yet.
 // Test hook: render the art window for named Pokemon without opening packs.
+window.__back = function(){ return buildCardBack().toDataURL("image/png"); };
 window.__sheet = function(names){
   return names.map(n=>{
     const mon = MON_BY_NAME[n];
