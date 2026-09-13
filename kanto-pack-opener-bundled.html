@@ -51,7 +51,8 @@
 
   #bottom{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 20px);
     display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 18px}
-  #hint{font-size:13.5px;letter-spacing:.02em;color:var(--muted);text-align:center;min-height:18px;
+  #hint{font-size:17px;line-height:1.45;letter-spacing:.01em;color:var(--paper);text-align:center;
+    min-height:24px;max-width:32ch;margin:0 auto;
     transition:opacity .3s ease}
   #hint b{color:var(--paper);font-weight:600}
   .cta{pointer-events:auto;border:0;border-radius:999px;padding:15px 30px;font-size:15px;font-weight:700;
@@ -1395,63 +1396,124 @@ const PACK_W=512, PACK_H=768, TEAR_AT=0.895; // fraction of height where body en
 function buildPackArt(){
   const c=document.createElement("canvas"); c.width=PACK_W; c.height=PACK_H;
   const ctx=c.getContext("2d");
-  const g=ctx.createLinearGradient(0,0,PACK_W,PACK_H);
-  g.addColorStop(0,"#12b6c9"); g.addColorStop(.35,"#1f6fd0"); g.addColorStop(.62,"#7a2bd6"); g.addColorStop(1,"#e0369a");
+  const rnd = mulberry32(0x9a1c);     // fixed: the wrapper is the same every pack
+  const bodyH = PACK_H*TEAR_AT;       // the strip above TEAR_AT becomes the pack's top
+
+  // Base foil. Real wrappers are metallised film, so the colour sits under hard
+  // vertical specular bands rather than a soft gradient -- that banding is what
+  // reads as foil rather than paper.
+  const g=ctx.createLinearGradient(0,0,PACK_W*0.4,PACK_H);
+  g.addColorStop(0,"#1a3fa8"); g.addColorStop(.34,"#1478c4");
+  g.addColorStop(.63,"#6a28c8"); g.addColorStop(1,"#c02a86");
   ctx.fillStyle=g; ctx.fillRect(0,0,PACK_W,PACK_H);
 
-  // foil streaks
-  for(let i=0;i<26;i++){
-    ctx.globalAlpha=.08+Math.random()*.12;
-    ctx.fillStyle= i%2 ? "#fff" : "#ffe9a8";
-    const w=8+Math.random()*40;
-    ctx.save(); ctx.translate(Math.random()*PACK_W, 0); ctx.rotate(-0.32);
-    ctx.fillRect(-w/2,-200,w,PACK_H+400); ctx.restore();
+  for(let x=-40; x<PACK_W+40; x+=13){
+    const w = 3 + rnd()*11;
+    const bright = rnd();
+    ctx.globalAlpha = 0.05 + bright*0.17;
+    ctx.fillStyle = bright > 0.80 ? "#ffffff" : (bright > 0.45 ? "#9fd0f2" : "#081038");
+    ctx.fillRect(x + rnd()*5, 0, w, PACK_H);
   }
   ctx.globalAlpha=1;
+  // A couple of broad sweeps, the highlight rolling across the film.
+  [[0.22,"rgba(255,255,255,.20)"],[0.68,"rgba(255,236,190,.15)"]].forEach(([px,col])=>{
+    const sg=ctx.createLinearGradient(PACK_W*px-90,0,PACK_W*px+90,0);
+    sg.addColorStop(0,"rgba(255,255,255,0)"); sg.addColorStop(.5,col); sg.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.fillStyle=sg; ctx.fillRect(0,0,PACK_W,PACK_H);
+  });
 
-  // sunburst behind logo
-  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.36); ctx.globalAlpha=.22; ctx.fillStyle="#fff";
-  for(let i=0;i<16;i++){ ctx.save(); ctx.rotate(i*Math.PI/8);
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-16,-600); ctx.lineTo(16,-600); ctx.closePath(); ctx.fill(); ctx.restore(); }
+  // Sunburst behind the logo.
+  ctx.save(); ctx.translate(PACK_W/2, bodyH*0.30); ctx.globalAlpha=.10; ctx.fillStyle="#fff";
+  for(let i=0;i<18;i++){ ctx.save(); ctx.rotate(i*Math.PI/9);
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-14,-620); ctx.lineTo(14,-620); ctx.closePath(); ctx.fill(); ctx.restore(); }
   ctx.restore();
 
-  // logo block
   ctx.textAlign="center";
-  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.33);
-  ctx.rotate(-0.045);
-  ctx.font="900 76px "+CARD_FONT;
-  ctx.lineJoin="round"; ctx.lineWidth=18; ctx.strokeStyle="#16103a"; ctx.strokeText("KANTO",0,0);
-  const lg=ctx.createLinearGradient(0,-56,0,10);
-  lg.addColorStop(0,"#fff8d8"); lg.addColorStop(.5,"#ffd15c"); lg.addColorStop(1,"#f09a2a");
+
+  // Set logo: the same ball that is on the card back, small, above the wordmark.
+  ctx.save(); ctx.translate(PACK_W/2, bodyH*0.13);
+  const pr=30;
+  ctx.save(); ctx.beginPath(); ctx.arc(0,0,pr,0,7); ctx.clip();
+  ctx.rotate(-18*Math.PI/180);
+  ctx.fillStyle="#d6182b"; ctx.fillRect(-pr*1.6,-pr*1.6,pr*3.2,pr*1.6);
+  ctx.fillStyle="#e6d29c"; ctx.fillRect(-pr*1.6,0,pr*3.2,pr*1.6);
+  ctx.fillStyle="#f7f1e0"; ctx.fillRect(-pr*1.6,-pr*0.15,pr*3.2,pr*0.30);
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,pr,0,7);
+  ctx.strokeStyle="#2b2118"; ctx.lineWidth=3.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,pr*0.30,0,7); ctx.fillStyle="#2b2118"; ctx.fill();
+  ctx.beginPath(); ctx.arc(0,0,pr*0.21,0,7); ctx.fillStyle="#f2e6bd"; ctx.fill();
+  ctx.restore();
+
+  // Wordmark.
+  ctx.save(); ctx.translate(PACK_W/2, bodyH*0.30); ctx.rotate(-0.04);
+  ctx.font="900 82px "+CARD_FONT;
+  ctx.lineJoin="round"; ctx.lineWidth=19; ctx.strokeStyle="#150f34"; ctx.strokeText("KANTO",0,0);
+  const lg=ctx.createLinearGradient(0,-60,0,12);
+  lg.addColorStop(0,"#fffbe8"); lg.addColorStop(.48,"#ffd15c"); lg.addColorStop(1,"#e8891c");
   ctx.fillStyle=lg; ctx.fillText("KANTO",0,0);
-  ctx.font="900 34px "+CARD_FONT; ctx.lineWidth=12;
-  ctx.strokeStyle="#16103a"; ctx.strokeText("SERIES",0,44);
-  ctx.fillStyle="#f3efe4"; ctx.fillText("SERIES",0,44);
+  ctx.font="900 33px "+CARD_FONT; ctx.lineWidth=13;
+  ctx.strokeStyle="#150f34"; ctx.strokeText("SERIES",0,44);
+  ctx.fillStyle="#f6f2e6"; ctx.fillText("SERIES",0,44);
   ctx.restore();
 
-  // holographic diamond
-  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.62);
-  const dg=ctx.createLinearGradient(-120,-120,120,120);
-  dg.addColorStop(0,"#9ef9ee"); dg.addColorStop(.4,"#5ac8f5"); dg.addColorStop(.7,"#c56cf0"); dg.addColorStop(1,"#ffd15c");
-  ctx.fillStyle=dg;
-  ctx.beginPath(); ctx.moveTo(0,-120); ctx.lineTo(96,0); ctx.lineTo(0,120); ctx.lineTo(-96,0); ctx.closePath();
-  ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=6; ctx.stroke();
-  ctx.fillStyle="rgba(22,16,58,.85)"; ctx.font="800 30px "+CARD_FONT;
-  ctx.fillText("10", 0, -2); ctx.font="700 14px "+CARD_FONT; ctx.fillText("CARDS", 0, 26);
+  // Featured artwork. Packs put a character on the front; this uses a sprite we
+  // already have loaded rather than shipping anything new. Fixed, not the pack's
+  // own rare, which would give the pull away before it is opened.
+  const star = SPRITE_IMAGES["Charizard"];
+  if(star && star.img && star.img.complete && star.img.naturalWidth){
+    const boxW = PACK_W*0.88, boxH = bodyH*0.40;
+    const k = Math.min(boxW/star.fw, boxH/star.fh);
+    const dw = star.fw*k, dh = star.fh*k;
+    const dx = PACK_W/2 - dw/2, dy = bodyH*0.56 - dh/2;
+    ctx.save();
+    ctx.imageSmoothingEnabled=false;
+    // A silhouette for the shadow. Drawing a translucent copy of the sprite
+    // instead just reads as a second, ghostly Charizard.
+    const sil = silhouetteOf(star, 0, 0);
+    ctx.globalAlpha=.30;
+    ctx.drawImage(sil, 0,0,star.fw,star.fh, dx+9, dy+11, dw, dh);
+    ctx.globalAlpha=1;
+    ctx.drawImage(star.img, 0,0,star.fw,star.fh, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // Claim banner, angled like a sticker.
+  ctx.save(); ctx.translate(PACK_W/2, bodyH*0.775); ctx.rotate(-0.025);
+  const bw=PACK_W*0.88, bh=54;
+  const bg2=ctx.createLinearGradient(0,-bh/2,0,bh/2);
+  bg2.addColorStop(0,"#ffe27a"); bg2.addColorStop(.5,"#f6c828"); bg2.addColorStop(1,"#d19b08");
+  ctx.fillStyle=bg2;
+  ctx.beginPath();
+  ctx.moveTo(-bw/2,-bh/2); ctx.lineTo(bw/2,-bh/2); ctx.lineTo(bw/2-16,0); ctx.lineTo(bw/2,bh/2);
+  ctx.lineTo(-bw/2,bh/2); ctx.lineTo(-bw/2+16,0); ctx.closePath();
+  ctx.fill(); ctx.strokeStyle="#5f4306"; ctx.lineWidth=3; ctx.stroke();
+  ctx.fillStyle="#3a2706"; ctx.font="800 21px "+CARD_FONT;
+  ctx.fillText("10 CARDS · 1 RARE · 1 REVERSE HOLO", 0, 7);
   ctx.restore();
 
-  // bottom bar
-  ctx.fillStyle="rgba(20,14,48,.55)"; ctx.fillRect(0, PACK_H*0.76, PACK_W, 52);
-  ctx.fillStyle="#eef0ff"; ctx.font="700 17px "+CARD_FONT;
-  ctx.fillText("1 GUARANTEED RARE · 1 REVERSE HOLO", PACK_W/2, PACK_H*0.76+34);
+  // Bottom heat-seal crimp: fine vertical ridges, the way a wrapper is welded.
+  const crimpH = bodyH*0.085, cy0 = bodyH - crimpH;
+  ctx.fillStyle="#b9c4d8"; ctx.fillRect(0, cy0, PACK_W, crimpH);
+  for(let x=0;x<PACK_W;x+=6){
+    ctx.fillStyle = (x/6)%2 ? "rgba(255,255,255,.55)" : "rgba(40,54,92,.40)";
+    ctx.fillRect(x, cy0, 3, crimpH);
+  }
+  ctx.fillStyle="rgba(10,16,44,.55)"; ctx.fillRect(0, cy0, PACK_W, 3);
+  ctx.fillStyle="#243055"; ctx.font="600 12px "+CARD_FONT;
+  ctx.fillText("KANTO SERIES · FAN-MADE · NOT FOR RESALE", PACK_W/2, cy0 + crimpH*0.66);
 
-  // tear strip zone
-  const ty = PACK_H*TEAR_AT;
-  ctx.fillStyle="rgba(255,255,255,.14)"; ctx.fillRect(0, ty, PACK_W, PACK_H-ty);
-  ctx.strokeStyle="rgba(255,255,255,.75)"; ctx.lineWidth=3; ctx.setLineDash([12,10]);
-  ctx.beginPath(); ctx.moveTo(0,ty+4); ctx.lineTo(PACK_W,ty+4); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle="rgba(255,255,255,.9)"; ctx.font="700 15px "+CARD_FONT;
-  ctx.fillText("TEAR HERE  ▸▸▸", PACK_W/2, ty+56);
+  // Tear strip. This band is the piece that ends up at the top of the pack.
+  const ty = bodyH;
+  ctx.fillStyle="#c6d0e2"; ctx.fillRect(0, ty, PACK_W, PACK_H-ty);
+  for(let x=0;x<PACK_W;x+=6){
+    ctx.fillStyle = (x/6)%2 ? "rgba(255,255,255,.60)" : "rgba(40,54,92,.34)";
+    ctx.fillRect(x, ty, 3, PACK_H-ty);
+  }
+  ctx.strokeStyle="rgba(30,42,80,.85)"; ctx.lineWidth=3; ctx.setLineDash([11,9]);
+  ctx.beginPath(); ctx.moveTo(0,ty+10); ctx.lineTo(PACK_W,ty+10); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle="#1e2a50"; ctx.font="800 16px "+CARD_FONT;
+  ctx.fillText("◂ ◂   T E A R   O P E N   ▸ ▸", PACK_W/2, ty+52);
   ctx.textAlign="left";
   return c;
 }
