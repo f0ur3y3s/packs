@@ -192,17 +192,25 @@ splitting scene and sprite onto separate quads so they parallax apart.
 
 ## Card back
 
-Drawn in `buildCardBack`, in the visual language of a classic trading-card back:
-royal blue field, sunburst, engraved rings, heavy cream frame with a gold rule
-and corner diamonds, and a central medallion carrying this set's own six-point
-star and ribbon. It is an original design using the Kanto Series marks — the
-real card back's ball device and wordmark are trademarks and are not
-reproduced here.
+Drawn in `buildCardBack`, built against the Japanese *Pocket Monsters Card
+Game* back: navy field marbled with arcs that circle the centre, five broad
+cream rays (two up, two down, one straight down — nothing points straight up,
+which is what leaves the field clear behind the wordmark), a red keyline inside
+the cream stock, a gold wordmark arced over a ball, and a gold ribbon beneath.
+
+The wordmark reads KANTO SERIES rather than the original's, and the footer says
+the set is fan-made and unaffiliated — this is a fan project's own back in that
+design, not a reproduction of a Nintendo product. Both strings are one line each
+in `buildCardBack` if you want them to say something else.
+
+The small print at the bottom is dark on purpose: the straight-down ray puts
+cream underneath it, which is why the original's copyright line down there is
+dark red rather than white.
 
 One canvas, one texture and one material shared by all ten cards. Its material
-is deliberately tinted below white: the scene runs ambient 0.72 plus two
-directionals, so at full white the back blows out. The card face does not show
-this because its shader samples the texture directly instead of being lit.
+is tinted below white: the scene runs ambient 0.72 plus two directionals, so at
+full white the back blows out. The card face does not show this because its
+shader samples the texture directly instead of being lit.
 
 ## Notes
 

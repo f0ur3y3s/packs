@@ -1219,119 +1219,137 @@ function buildCardFace(card){
 }
 
 let BACK_CANVAS = null;
+// Text set around a circle, a character at a time.
+function arcText(ctx, text, cx, cy, radius, centerA, spread, o){
+  ctx.save(); ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font = o.font;
+  for(let i=0;i<text.length;i++){
+    const t = text.length===1 ? 0.5 : i/(text.length-1);
+    const a = centerA - spread/2 + spread*t;
+    ctx.save();
+    ctx.translate(cx + Math.cos(a)*radius, cy + Math.sin(a)*radius);
+    ctx.rotate(a + Math.PI/2);
+    if(o.stroke){
+      ctx.lineWidth = o.lineWidth || 7; ctx.strokeStyle = o.stroke;
+      ctx.lineJoin = "round"; ctx.miterLimit = 2;
+      ctx.strokeText(text[i], 0, 0);
+    }
+    ctx.fillStyle = o.fill; ctx.fillText(text[i], 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function buildCardBack(){
   if(BACK_CANVAS) return BACK_CANVAS;
   const c=document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
   const ctx=c.getContext("2d"); const R=30;
-  const cx=CARD_W/2, cy=CARD_H/2;
+  const cx=CARD_W/2, cy=CARD_H*0.435;          // ball sits above centre
+  const rnd = mulberry32(0x4b1d);              // fixed seed: the back never varies
 
-  // Built in the visual language of a classic trading-card back -- royal blue
-  // field, sunburst, heavy cream frame, central medallion -- but drawn from
-  // scratch with this app's own Kanto Series marks. The real card back's ball
-  // device and wordmark are trademarks, and not ours to reproduce.
-  rr(ctx,0,0,CARD_W,CARD_H,R);
-  const field=ctx.createLinearGradient(0,0,CARD_W*0.35,CARD_H);
-  field.addColorStop(0,"#2a4fae"); field.addColorStop(.48,"#16307e"); field.addColorStop(1,"#0d1c53");
-  ctx.fillStyle=field; ctx.fill();
-  ctx.save(); rr(ctx,0,0,CARD_W,CARD_H,R); ctx.clip();
+  // Cream card stock, then the red keyline, then the navy field inside it --
+  // the layering the original uses.
+  rr(ctx,0,0,CARD_W,CARD_H,R); ctx.fillStyle="#fbf7ec"; ctx.fill();
 
-  // Sunburst behind everything.
+  const inset = 15;
+  ctx.save();
+  rr(ctx, inset, inset, CARD_W-inset*2, CARD_H-inset*2, R-9); ctx.clip();
+  ctx.fillStyle="#14306f"; ctx.fillRect(0,0,CARD_W,CARD_H);
+
+  // Marbled field. The strokes are arcs centred on the ball, because the
+  // original's brushwork circles the centre rather than running down the card.
+  const maxR = Math.hypot(CARD_W, CARD_H)*0.62;
+  for(let i=0;i<430;i++){
+    const rad = 26 + rnd()*maxR;
+    const a0 = rnd()*Math.PI*2, span = 0.22 + rnd()*1.45;
+    ctx.strokeStyle = rnd() < 0.55
+      ? "rgba(5,12,44," + (0.16+rnd()*0.40).toFixed(2) + ")"
+      : "rgba(74,118,214," + (0.08+rnd()*0.28).toFixed(2) + ")";
+    ctx.lineWidth = 3 + rnd()*17; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a0+span); ctx.stroke();
+  }
+
+  // Five broad bands, as the original has: two up, two down and one straight
+  // down. Nothing points straight up, which is what leaves the navy clear
+  // behind the wordmark.
   ctx.save(); ctx.translate(cx,cy);
-  for(let i=0;i<28;i++){
-    ctx.rotate(Math.PI*2/28);
-    ctx.globalAlpha = i%2 ? 0.075 : 0.028;
-    ctx.fillStyle="#9fc4ff";
+  ctx.fillStyle = "#fdfbf3";
+  const diag = Math.hypot(CARD_W, CARD_H);
+  [30, 90, 150, 210, 330].forEach(deg=>{
+    const a = deg*Math.PI/180;
     ctx.beginPath(); ctx.moveTo(0,0);
-    ctx.arc(0,0,CARD_H*0.9, -0.055, 0.055); ctx.closePath(); ctx.fill();
-  }
-  ctx.restore(); ctx.globalAlpha=1;
-
-  // Fine concentric rings, the guilloche of an engraved back.
-  ctx.globalAlpha=.16; ctx.strokeStyle="#bcd8ff"; ctx.lineWidth=1;
-  for(let i=0;i<30;i++){
-    ctx.beginPath(); ctx.ellipse(cx,cy, 34+i*15, 46+i*19, 0,0,7); ctx.stroke();
-  }
-  ctx.globalAlpha=1;
-
-  // Frame: cream band, gold rule inside it, deeper blue panel within.
-  ctx.strokeStyle="#f4efe1"; ctx.lineWidth=20;
-  rr(ctx,22,22,CARD_W-44,CARD_H-44,22); ctx.stroke();
-  ctx.strokeStyle="#d8b048"; ctx.lineWidth=3;
-  rr(ctx,36,36,CARD_W-72,CARD_H-72,15); ctx.stroke();
-  ctx.strokeStyle="rgba(255,255,255,.30)"; ctx.lineWidth=1.5;
-  rr(ctx,44,44,CARD_W-88,CARD_H-88,11); ctx.stroke();
-
-  // Corner flourishes on the inner rule.
-  const inset=44, corners=[[inset,inset],[CARD_W-inset,inset],[inset,CARD_H-inset],[CARD_W-inset,CARD_H-inset]];
-  corners.forEach(([x,y])=>{
-    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4);
-    ctx.fillStyle="#d8b048"; ctx.fillRect(-7,-7,14,14);
-    ctx.fillStyle="#f4efe1"; ctx.fillRect(-3.5,-3.5,7,7);
-    ctx.restore();
+    ctx.arc(0, 0, diag, a-0.235, a+0.235); ctx.closePath(); ctx.fill();
   });
-
-  // Medallion.
-  const halo=ctx.createRadialGradient(cx,cy,20,cx,cy,178);
-  halo.addColorStop(0,"rgba(255,241,196,.34)"); halo.addColorStop(1,"rgba(255,241,196,0)");
-  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(cx,cy,178,0,7); ctx.fill();
-
-  ctx.beginPath(); ctx.arc(cx,cy,112,0,7);
-  const ring=ctx.createLinearGradient(cx-112,cy-112,cx+112,cy+112);
-  ring.addColorStop(0,"#ffe9a8"); ring.addColorStop(.5,"#d8b048"); ring.addColorStop(1,"#8a6510");
-  ctx.fillStyle=ring; ctx.fill();
-  ctx.strokeStyle="rgba(255,255,255,.65)"; ctx.lineWidth=2; ctx.stroke();
-
-  // Beading around the ring.
-  for(let i=0;i<32;i++){
-    const a=i*Math.PI*2/32;
-    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*98, cy+Math.sin(a)*98, 3.1, 0, 7);
-    ctx.fillStyle = i%2 ? "#fff6d8" : "#a97f1d"; ctx.fill();
-  }
-
-  ctx.beginPath(); ctx.arc(cx,cy,86,0,7);
-  const disc=ctx.createLinearGradient(cx,cy-86,cx,cy+86);
-  disc.addColorStop(0,"#1d3d96"); disc.addColorStop(1,"#0c1a4c");
-  ctx.fillStyle=disc; ctx.fill();
-
-  // The six-point star this set already uses on its pack and pips.
-  ctx.save(); ctx.translate(cx,cy);
-  ctx.beginPath();
-  for(let i=0;i<12;i++){
-    const a=-Math.PI/2+i*Math.PI/6, rad=i%2?30:74;
-    ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
-  }
-  ctx.closePath();
-  const star=ctx.createLinearGradient(-74,-74,74,74);
-  star.addColorStop(0,"#8ef7ea"); star.addColorStop(.55,"#42e8d8"); star.addColorStop(1,"#1e9fb8");
-  ctx.fillStyle=star; ctx.fill();
-  ctx.strokeStyle="rgba(255,255,255,.8)"; ctx.lineWidth=3; ctx.stroke();
   ctx.restore();
 
-  ctx.beginPath(); ctx.arc(cx,cy,31,0,7);
-  ctx.fillStyle="#0c1a4c"; ctx.fill();
-  ctx.strokeStyle="#f4efe1"; ctx.lineWidth=4; ctx.stroke();
-  ctx.fillStyle="#f4efe1"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.font="800 34px "+CARD_FONT; ctx.fillText("K", cx, cy+2);
+  // Wordmark arced over the ball.
+  arcText(ctx, "KANTO SERIES", cx, cy, 158, -Math.PI/2, 2.74, {
+    font: "800 38px " + CARD_FONT, fill: "#f6c828", stroke: "#3b2708", lineWidth: 8
+  });
 
-  // Ribbon under the medallion.
-  const bw=286, bh=46, bx=cx-bw/2, by=cy+126;
-  ctx.fillStyle="#0c1a4c";
+  // Ball.
+  const br = 122;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,br,0,7); ctx.clip();
+  const top = ctx.createLinearGradient(cx, cy-br, cx, cy);
+  top.addColorStop(0,"#f4565c"); top.addColorStop(.50,"#d6182b"); top.addColorStop(1,"#8e0c18");
+  ctx.fillStyle=top; ctx.fillRect(cx-br, cy-br, br*2, br);
+  const bot = ctx.createLinearGradient(cx, cy, cx, cy+br);
+  bot.addColorStop(0,"#f7efd2"); bot.addColorStop(.40,"#dfc68a"); bot.addColorStop(1,"#8f7233");
+  ctx.fillStyle=bot; ctx.fillRect(cx-br, cy, br*2, br);
+  ctx.fillStyle="#1d1812"; ctx.fillRect(cx-br, cy-br*0.135, br*2, br*0.27);
+  // Sheen across the upper left.
+  const sheen = ctx.createRadialGradient(cx-br*0.38, cy-br*0.46, br*0.05, cx-br*0.38, cy-br*0.46, br*1.05);
+  sheen.addColorStop(0,"rgba(255,255,255,.58)"); sheen.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=sheen; ctx.fillRect(cx-br, cy-br, br*2, br*2);
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx,cy,br,0,7);
+  ctx.strokeStyle="#241d16"; ctx.lineWidth=5; ctx.stroke();
+  // Button.
+  ctx.beginPath(); ctx.arc(cx,cy,br*0.30,0,7);
+  ctx.fillStyle="#241d16"; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,br*0.205,0,7);
+  const btn = ctx.createLinearGradient(cx, cy-br*0.2, cx, cy+br*0.2);
+  btn.addColorStop(0,"#fdf3d6"); btn.addColorStop(1,"#b99b52");
+  ctx.fillStyle=btn; ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=2; ctx.stroke();
+
+  // Ribbon.
+  const by = cy + br + 40, bw = 268, bh = 46, bx = cx - bw/2, notch = 20;
   ctx.beginPath();
-  ctx.moveTo(bx,by); ctx.lineTo(bx+bw,by); ctx.lineTo(bx+bw-16,by+bh/2); ctx.lineTo(bx+bw,by+bh);
-  ctx.lineTo(bx,by+bh); ctx.lineTo(bx+16,by+bh/2); ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle="#d8b048"; ctx.lineWidth=2.5; ctx.stroke();
-  ctx.fillStyle="#ffe9a8"; ctx.font="800 21px "+CARD_FONT;
-  ctx.letterSpacing && (ctx.letterSpacing = "3px");
-  ctx.fillText("KANTO SERIES", cx, by+bh/2+1);
-  ctx.letterSpacing && (ctx.letterSpacing = "0px");
+  ctx.moveTo(bx-26, by+6); ctx.lineTo(bx+10, by); ctx.lineTo(bx+bw-10, by);
+  ctx.lineTo(bx+bw+26, by+6); ctx.lineTo(bx+bw+26, by+bh-6); ctx.lineTo(bx+bw-10, by+bh);
+  ctx.lineTo(bx+10, by+bh); ctx.lineTo(bx-26, by+bh-6); ctx.closePath();
+  const rib = ctx.createLinearGradient(0, by, 0, by+bh);
+  rib.addColorStop(0,"#ffe27a"); rib.addColorStop(.5,"#f6c828"); rib.addColorStop(1,"#d39d0c");
+  ctx.fillStyle=rib; ctx.fill();
+  ctx.strokeStyle="#3b2708"; ctx.lineWidth=3; ctx.stroke();
+  // Folded tails.
+  ctx.fillStyle="#c08c08";
+  [[bx-26, by+6, -1],[bx+bw+26, by+6, 1]].forEach(([tx,ty,dir])=>{
+    ctx.beginPath();
+    ctx.moveTo(tx, ty); ctx.lineTo(tx + dir*notch, ty + bh*0.30);
+    ctx.lineTo(tx, ty + bh - 12); ctx.closePath(); ctx.fill();
+  });
+  ctx.fillStyle="#2a1c06"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font="800 24px "+CARD_FONT;
+  ctx.fillText("CARD GAME", cx, by+bh/2+1);
 
-  // Small line above the medallion, for balance.
-  ctx.fillStyle="rgba(255,241,196,.75)"; ctx.font="700 13px "+CARD_FONT;
-  ctx.fillText("COLLECT ALL 151", cx, cy-150);
+  // Footer line, in the place the original puts its small print.
+  // Dark, because the straight-down band puts white under it -- which is
+  // exactly why the original's small print down here is dark red, not white.
+  ctx.fillStyle="#9a1b22"; ctx.font="700 11px "+CARD_FONT;
+  ctx.fillText("KANTO SERIES · 151 CARDS · FAN-MADE SET", cx, CARD_H-48);
+  ctx.fillStyle="#4a2f10";
+  ctx.fillText("Not affiliated with or endorsed by Nintendo", cx, CARD_H-33);
 
   ctx.textAlign="left"; ctx.textBaseline="alphabetic";
   ctx.restore();
+
+  // Red keyline last, over the field.
+  ctx.strokeStyle="#d3232c"; ctx.lineWidth=3;
+  rr(ctx, inset, inset, CARD_W-inset*2, CARD_H-inset*2, R-9); ctx.stroke();
+
   BACK_CANVAS=c; return c;
 }
 
