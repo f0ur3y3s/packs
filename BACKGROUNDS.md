@@ -1,4 +1,9 @@
-# Plan: natural environments behind the sprites
+# Natural environments behind the sprites
+
+> **Status: phases 1–3 are built and shipped.** Habitat scenes are drawn on
+> every card. What is left is phase 4 (richer time-of-day and accents) and the
+> layered-parallax extension at the end. The rest of this document is the
+> reasoning behind the approach, kept because the trade-offs still apply.
 
 ## Where this stands today
 
@@ -94,17 +99,16 @@ Seeded variation across several axes, all cheap:
 
 ## Phasing
 
-1. **Scene generator.** `drawHabitatScene(ctx, habitat, seed, rect)` with the
-   nine palettes and four layers. Swap it in for the gradient. Keep the artwork
-   wash at low alpha over it for now.
-2. **Tune against real cards.** Render all 151 and look for sprites that
-   disappear into their background — dark Pokémon on cave, white on mountain.
-   Expect to add a vignette or a ground shadow under the sprite to separate
-   them. This step is where the look is actually won, and it is mostly judgement,
-   not code.
-3. **Decide the wash's fate.** The official-artwork wash and a real scene may
-   fight each other. Likely outcome: drop the wash for habitat scenes and keep it
-   only where habitat is missing. Worth comparing side by side before choosing.
+1. ~~**Scene generator.**~~ Done — `drawHabitatScene` in the app: sky ramp, sun
+   or moon, three seeded terrain bands, scatter, and a centre lift.
+2. ~~**Tune against real cards.**~~ Done. `window.__sheet(names)` renders art
+   windows without opening packs; the check across dark, pale and mid Pokémon is
+   what caught the sprite-scale bug below. Separation comes from the centre lift
+   plus the sprite's own drop shadow, and night was weighted down and lifted off
+   its floor because dark-on-dark was the one failing combination.
+3. ~~**Decide the wash's fate.**~~ Done, and it went as expected: compared side
+   by side, the wash over a scene read as fog. It is off wherever a habitat scene
+   is drawn and stays at 0.62 only when the bundle has no habitat for a Pokémon.
 4. **Time-of-day ramps and accents**, once the base reads well.
 
 ## The extension worth knowing about

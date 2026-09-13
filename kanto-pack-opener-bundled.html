@@ -316,6 +316,105 @@ const HABITAT_GROUNDS = {
   "waters-edge":  ["#cdeee2","#82c4b2","#48897a"]
 };
 const DEFAULT_GROUND = HABITAT_GROUNDS.grassland;
+
+/* ---- habitat scenes ------------------------------------------------------
+   A layered landscape per card instead of a flat gradient, built from the
+   habitat PokeAPI already gives us. Drawn, not fetched: it costs no payload,
+   covers all 151 without sourcing art, and flat colour sits behind pixel
+   sprites far better than a photograph would.
+
+   Two rules this has to keep. It is seeded from the Pokemon's name, like
+   statsFor, because the binder rebuilds a card from nothing but its dex number
+   and a random scene would not match the card that was pulled. And it is drawn
+   before the animation plate is snapshotted, so it costs nothing per frame. */
+const SCENES = {
+  forest:        {sky:["#cfe3b4","#9fc489"], far:"#5c8f5e", mid:"#3d6b47", near:"#27452f", spec:"trees"},
+  sea:           {sky:["#cfeaf5","#9ed2e8"], far:"#4f9ec8", mid:"#2f7aa8", near:"#1d5178", spec:"waves"},
+  cave:          {sky:["#6e6478","#4a4254"], far:"#3d3648", mid:"#2c2637", near:"#1b1824", spec:"stalac"},
+  mountain:      {sky:["#dbe4ee","#b6c3d4"], far:"#8b93a3", mid:"#646c7c", near:"#414855", spec:"peaks"},
+  grassland:     {sky:["#e7f0c4","#c3d894"], far:"#8fb35f", mid:"#6b9247", near:"#4a6b33", spec:"hills"},
+  urban:         {sky:["#d9dde8","#b0b6c6"], far:"#8a90a2", mid:"#636a7c", near:"#414755", spec:"city"},
+  "waters-edge": {sky:["#d6efe4","#a6d8c8"], far:"#6fb9a6", mid:"#458d84", near:"#2c5f60", spec:"waves"},
+  "rough-terrain":{sky:["#efdcbb","#d6b98c"], far:"#b38d5e", mid:"#8a6844", near:"#5e462e", spec:"mesa"},
+  rare:          {sky:["#e4d4f6","#bfa0e4"], far:"#8f63c4", mid:"#653f94", near:"#412663", spec:"peaks"}
+};
+// Time of day, picked by the seed. This is what stops thirty-five grassland
+// cards looking like the same picture.
+// Day is listed twice so it comes up most often. Night is striking but a dark
+// Pokemon on a dark habitat is the one combination where the sprite stops
+// reading, so it stays the exception, and is lifted off its floor.
+const TIMES = [
+  {k:0.00, sky:null,      light:1.00},               // day
+  {k:0.00, sky:null,      light:1.00},               // day again
+  {k:0.28, sky:"#ffb47a", light:0.94},               // golden
+  {k:0.42, sky:"#6a5aa8", light:0.80},               // dusk
+  {k:0.50, sky:"#232a5c", light:0.70}                // night
+];
+function mixCol(a,b,t){
+  const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
+  const r=Math.round((pa>>16&255)*(1-t)+(pb>>16&255)*t);
+  const g=Math.round((pa>>8&255)*(1-t)+(pb>>8&255)*t);
+  const bl=Math.round((pa&255)*(1-t)+(pb&255)*t);
+  return "rgb("+r+","+g+","+bl+")";
+}
+function tone(hex, T){
+  const base = T.sky ? mixCol(hex, T.sky, T.k) : hex;
+  if(T.light === 1) return base;
+  const m = base.match(/\d+/g);
+  return "rgb(" + m.map(v=>Math.round(v*T.light)).join(",") + ")";
+}
+// One band of terrain across the window, its outline wobbled by the seed.
+function ridge(ctx, x, y, w, h, top, amp, step, fill){
+  ctx.beginPath();
+  ctx.moveTo(x, y+h);
+  for(let px=0; px<=w+step; px+=step){
+    const t = Math.min(px, w);
+    ctx.lineTo(x+t, top + (Math.sin((t/w)*6.3 + amp.p)*0.5 + amp.r())*amp.a);
+  }
+  ctx.lineTo(x+w, y+h);
+  ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+}
+function drawHabitatScene(ctx, habitat, name, x, y, w, h){
+  const S = SCENES[habitat] || SCENES.grassland;
+  const rnd = mulberry32(hashStr(name + "·scene"));
+  const T = TIMES[(rnd()*TIMES.length)|0];
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+
+  const sky = ctx.createLinearGradient(x,y,x,y+h);
+  sky.addColorStop(0, tone(S.sky[0], T));
+  sky.addColorStop(1, tone(S.sky[1], T));
+  ctx.fillStyle = sky; ctx.fillRect(x,y,w,h);
+
+  // Sun or moon, low and off to one side.
+  const discX = x + w*(0.18 + rnd()*0.64), discY = y + h*(0.16 + rnd()*0.18);
+  const discR = h*(0.055 + rnd()*0.04);
+  ctx.globalAlpha = T.light < 0.7 ? 0.85 : 0.55;
+  ctx.fillStyle = T.light < 0.7 ? "#f2f0ff" : "#fffbe8";
+  ctx.beginPath(); ctx.arc(discX, discY, discR, 0, 6.29); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  const horizon = y + h*(0.44 + rnd()*0.12);
+  ridge(ctx, x, y, w, h, horizon - h*0.10, {a:h*0.09, p:rnd()*6.3, r:rnd}, 30, tone(S.far, T));
+  ridge(ctx, x, y, w, h, horizon + h*0.06, {a:h*0.07, p:rnd()*6.3, r:rnd}, 24, tone(S.mid, T));
+  ridge(ctx, x, y, w, h, y + h*0.82,       {a:h*0.06, p:rnd()*6.3, r:rnd}, 34, tone(S.near, T));
+
+  // Scatter: a handful of marks on the near band so it is not a bare shape.
+  ctx.fillStyle = tone(S.mid, T); ctx.globalAlpha = 0.5;
+  for(let i=0;i<18;i++){
+    const sx = x + rnd()*w, sy = y + h*(0.84 + rnd()*0.14), r = 1.5 + rnd()*3.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Lift the middle so a dark sprite still reads against a dark habitat.
+  const pop = ctx.createRadialGradient(x+w/2, y+h*0.54, h*0.06, x+w/2, y+h*0.54, h*0.78);
+  pop.addColorStop(0, "rgba(255,255,255,0.13)");
+  pop.addColorStop(1, "rgba(0,0,0,0.16)");
+  ctx.fillStyle = pop; ctx.fillRect(x,y,w,h);
+  ctx.restore();
+}
 const SPRITE_BACKDROPS = {};
 
 // Everything the card draws from real PokeAPI data, or null when the bundle
@@ -511,8 +610,12 @@ function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   // Snap to a whole-pixel multiple. At a fractional scale nearest-neighbour
   // gives some source rows 3 screen pixels and others 4, which reads as a
   // ragged, shimmering edge on the sprite.
+  // Snap only above 2x. Flooring everything sent the big sprites -- Charizard
+  // is 133x140 and fits at about 1.9x -- down to 1x, so they rendered at a
+  // third of the size they should. Below 2x the exact fit matters far more
+  // than whole-pixel crispness.
   let scale = Math.min(boxW/rec.fw, boxH/rec.fh);
-  if(scale > 1) scale = Math.floor(scale);
+  if(scale > 2) scale = Math.floor(scale);
   const dw = rec.fw*scale, dh = rec.fh*scale;
   const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
   const dx = artX + pad + (boxW-dw)/2, dy = artY + pad + (boxH-dh)/2;
@@ -1007,6 +1110,12 @@ function buildCardFace(card){
   ctx.fillStyle=fg; ctx.fill();
   ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=2; ctx.stroke();
   ctx.restore();
+  // A landscape for the habitat, over the gradient (which still colours the
+  // 6px lip around the window). Falls back to the plain gradient when the
+  // bundle carries no metadata.
+  if(meta && meta.habitat){
+    drawHabitatScene(ctx, meta.habitat, mon.name, artX, artY, artW, artH);
+  }
 
   // Wash of that Pokemon's own artwork over the habitat ground. Scaled to
   // cover and clipped to the window; it is blurred and semi-transparent, so it
@@ -1017,7 +1126,7 @@ function buildCardFace(card){
     const bw = backdrop.naturalWidth*cover, bh = backdrop.naturalHeight*cover;
     ctx.save();
     ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
-    ctx.globalAlpha = 0.62;
+    ctx.globalAlpha = (meta && meta.habitat) ? 0.0 : 0.62;
     ctx.drawImage(backdrop, artX+(artW-bw)/2, artY+(artH-bh)/2, bw, bh);
     ctx.globalAlpha = 1;
     // Settle the middle so the sprite always has something to read against.
@@ -2662,6 +2771,17 @@ animate();
 // Show a pack straight away using the built-in fallback art. The 151 remote
 // sprites then load in the background, and the pack is rebuilt with the real
 // art once they arrive — as long as it hasn't been torn open yet.
+// Test hook: render the art window for named Pokemon without opening packs.
+window.__sheet = function(names){
+  return names.map(n=>{
+    const mon = MON_BY_NAME[n];
+    if(!mon) return null;
+    const f = buildCardFace({mon, stats:statsFor(mon), holo:"none"});
+    const c = document.createElement("canvas"); c.width=428; c.height=286;
+    c.getContext("2d").drawImage(f.front, 42,136,428,286, 0,0,428,286);
+    return c.toDataURL("image/png");
+  }).filter(Boolean);
+};
 newPack();
 // The sprite bundle is big, so it is pulled in after the pack is already
 // interactive rather than blocking the page on it. --inline puts the data in
