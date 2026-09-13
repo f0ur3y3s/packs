@@ -54,8 +54,11 @@ HOSTS = (
     "https://cdn.statically.io/gh/PokeAPI/sprites/master/{path}",
 )
 
-# Matches the sprites-data.js tag whether or not it is still commented out.
-MARKER = re.compile(r'(?:<!--\s*)?<script src="sprites-data\.js"></script>(?:\s*-->)?')
+# Slots that --inline fills. The older (blocking) script tag is still accepted
+# so an HTML file from before the slots existed keeps working.
+SPRITE_SLOT = re.compile(r'<!--SPRITE_DATA_SLOT-->'
+                         r'|(?:<!--\s*)?<script src="sprites-data\.js"></script>(?:\s*-->)?')
+THREE_SLOT = re.compile(r'<!--THREE_SLOT-->')
 
 
 def fetch(dex_id, template, timeout):
@@ -153,6 +156,8 @@ def main():
     ap.add_argument("--out", default="sprites-data.js", help="output JS file")
     ap.add_argument("--inline", metavar="HTML",
                     help="also write a self-contained copy of this HTML file")
+    ap.add_argument("--three", default="three.min.js",
+                    help="engine to inline alongside the sprites (default: three.min.js)")
     ap.add_argument("--workers", type=int, default=12, help="parallel downloads")
     ap.add_argument("--timeout", type=float, default=30.0, help="per-request timeout")
     args = ap.parse_args()
@@ -214,15 +219,29 @@ def main():
     if args.inline:
         src = pathlib.Path(args.inline)
         html = src.read_text(encoding="utf-8")
-        if not MARKER.search(html):
-            print(f'error: no <script src="sprites-data.js"> tag found in {src}',
-                  file=sys.stderr)
+        if not SPRITE_SLOT.search(html):
+            print(f"error: no <!--SPRITE_DATA_SLOT--> found in {src}", file=sys.stderr)
             return 1
-        # An inline <script> cannot contain the literal "</script>"; the data
-        # is pure base64 so this is belt-and-braces.
-        tag = "<script>\n" + js.replace("</", "<\\/") + "</script>"
+
+        # An inline <script> cannot contain the literal "</script>". The sprite
+        # payload is pure base64, but the engine is arbitrary minified JS.
+        def inline_tag(code):
+            return "<script>\n" + code.replace("</", "<\\/") + "\n</script>"
+
+        html = SPRITE_SLOT.sub(lambda _: inline_tag(js), html, count=1)
+
+        # Inline the engine too, or the "self-contained" file still needs a CDN.
+        engine = src.parent / args.three
+        if THREE_SLOT.search(html):
+            if engine.is_file():
+                html = THREE_SLOT.sub(lambda _: inline_tag(engine.read_text(encoding="utf-8")),
+                                      html, count=1)
+            else:
+                print(f"warning: {engine} not found — the bundled file will still "
+                      "fetch three.js from a CDN", file=sys.stderr)
+
         dest = src.with_name(src.stem + "-bundled" + src.suffix)
-        dest.write_text(MARKER.sub(lambda _: tag, html, count=1), encoding="utf-8")
+        dest.write_text(html, encoding="utf-8")
         print(f"Wrote {dest} ({dest.stat().st_size/1e6:.1f} MB, self-contained)",
               file=sys.stderr)
 

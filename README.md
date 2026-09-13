@@ -12,9 +12,11 @@ python3 -m http.server
 # then open http://localhost:8000/kanto-pack-opener.html
 ```
 
-…or open `kanto-pack-opener.html` directly. Keep `sprites-data.js` next to it.
+…or open `kanto-pack-opener.html` directly. Keep `sprites-data.js` and
+`three.min.js` next to it. Nothing here touches the network at runtime — the
+engine and the art are both local.
 
-For a single file with nothing alongside it, see `--inline` below.
+For a single file with nothing alongside it at all, see `--inline` below.
 
 ## Files
 
@@ -22,7 +24,27 @@ For a single file with nothing alongside it, see `--inline` below.
 | --- | --- |
 | `kanto-pack-opener.html` | The app. `bootPackOpener()` is in the first `<script>`; a shim in the second loads three.js r128 from a CDN list and calls it. |
 | `sprites-data.js` | The 151 animated sprite sheets as base64 data URIs, with frame timings. Generated — do not edit. |
+| `three.min.js` | Vendored three.js r128. Tried before any CDN, so the app works offline. |
 | `bundle-sprites.py` | Regenerates `sprites-data.js`. |
+
+## Loading
+
+Two things are deliberately *not* blocking `<script src>` tags in the head:
+
+- **`sprites-data.js` is fetched in the background**, after the pack is already
+  on screen. It is ~4 MB, and loading it up front froze the boot screen at
+  "Getting the 3D engine ready… 0%" for the whole download — nothing below a
+  blocking script parses, so the engine loader had not even started and no
+  error could be reported. The pack now renders immediately with the built-in
+  `drawCreature` art and is rebuilt once the real art lands (only if it hasn't
+  been torn open yet).
+- **three.js is loaded by the shim**, which tries the vendored `three.min.js`
+  first and falls back to three CDNs, each with an 8s timeout, then shows a
+  retry screen if all fail.
+
+`bundle-sprites.py --inline` splices both into the `<!--THREE_SLOT-->` and
+`<!--SPRITE_DATA_SLOT-->` placeholders to produce a genuinely self-contained
+file — one that needs no network, not just one with the art baked in.
 
 ## Sprites
 
@@ -82,7 +104,8 @@ renders — stills, so nothing animates). `--max-frames` trades bundle size
 against motion fidelity; the animated sets need Pillow.
 
 Rough sizes: showdown at 30 frames is ~4.1 MB across 151 sheets; `gen1` stills
-are ~128 KB.
+are ~128 KB. Since the bundle loads in the background, its size costs you how
+long the fallback art is on screen, not how long the page takes to start.
 
 ## Notes
 
