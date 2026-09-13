@@ -1,0 +1,4 @@
+node_modules/
+# Build artifact: regenerate with
+#   python3 bundle-sprites.py --gen1 --inline kanto-pack-opener.html
+kanto-pack-opener-bundled.html

@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c0a1e">
+<title>Kanto Pack Opener</title>
+<style>
+  :root{
+    --ink:#0c0a1e;
+    --ink-2:#161233;
+    --foil:#42e8d8;
+    --foil-2:#ff4fa3;
+    --gold:#ffd15c;
+    --paper:#f4f2ee;
+    --muted:#9a93c4;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% 8%, #2a2160 0%, #150f33 45%, #0c0a1e 100%);
+    color:var(--paper);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  #stage{position:fixed;inset:0;width:100%;height:100%}
+  canvas{display:block}
+  #stage canvas{width:100% !important;height:100% !important;display:block}
+  #boot{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:32px;text-align:center;
+    background:#0c0a1e;font-size:14px;line-height:1.6;color:var(--muted)}
+  #boot b{display:block;color:var(--paper);font-size:16px;margin-bottom:6px}
+  .bootbox{width:min(340px,82vw)}
+  .bootbar{height:7px;margin:18px 0 8px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
+  .bootbar i{display:block;width:0%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--foil),var(--foil-2));transition:width .18s ease}
+  #bootPercent{font-size:11px;color:var(--muted);letter-spacing:.08em}
+  #fx{position:fixed;inset:0;pointer-events:none;z-index:5}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;z-index:10;pointer-events:none;
+       padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 18px)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .wordmark{font-weight:800;font-size:15px;letter-spacing:.14em;line-height:1}
+  .wordmark span{display:block;font-weight:500;font-size:10px;letter-spacing:.22em;color:var(--muted);margin-top:5px}
+  .iconbtn{pointer-events:auto;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.06);color:var(--paper);font-size:16px;display:grid;place-items:center;backdrop-filter:blur(8px)}
+  .iconbtn:active{transform:scale(.93)}
+  .iconbtn.on{background:rgba(66,232,216,.22);border-color:rgba(66,232,216,.7);color:#8ef7ea}
+
+  #bottom{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 20px);
+    display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 18px}
+  #hint{font-size:13.5px;letter-spacing:.02em;color:var(--muted);text-align:center;min-height:18px;
+    transition:opacity .3s ease}
+  #hint b{color:var(--paper);font-weight:600}
+  .cta{pointer-events:auto;border:0;border-radius:999px;padding:15px 30px;font-size:15px;font-weight:700;
+    letter-spacing:.03em;color:#131033;background:linear-gradient(180deg,#7af5e6,#2fd0bd);
+    box-shadow:0 10px 30px -10px rgba(66,232,216,.7);transition:transform .12s ease,opacity .2s}
+  .cta:active{transform:translateY(2px) scale(.98)}
+  .cta.ghost{background:rgba(255,255,255,.08);color:var(--paper);border:1px solid rgba(255,255,255,.2);box-shadow:none}
+
+  #pips{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:280px}
+  .pip{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2);transition:all .25s ease}
+  .pip.done{background:rgba(255,255,255,.55)}
+  .pip.now{background:var(--foil);transform:scale(1.5)}
+  .pip.hit{background:var(--gold)}
+
+  /* ---------- rip meter ---------- */
+  #meter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 118px);
+    width:180px;height:4px;border-radius:4px;background:rgba(255,255,255,.14);overflow:hidden;opacity:0;transition:opacity .2s}
+  #meter i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--foil),var(--foil-2));border-radius:4px}
+
+  /* ---------- celebration banner ---------- */
+  #banner{position:absolute;left:0;right:0;top:34%;text-align:center;opacity:0;transform:scale(.8);
+    transition:opacity .25s ease,transform .35s cubic-bezier(.2,1.6,.4,1)}
+  #banner.on{opacity:1;transform:scale(1)}
+  #banner .big{font-size:clamp(30px,11vw,52px);font-weight:900;letter-spacing:-.02em;line-height:.95;
+    background:linear-gradient(100deg,#fff 10%,var(--foil) 35%,var(--foil-2) 55%,var(--gold) 80%,#fff 95%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 4px 20px rgba(255,79,163,.45))}
+  #banner .sub{margin-top:8px;font-size:12px;letter-spacing:.26em;color:rgba(255,255,255,.72);font-weight:600}
+
+  /* ---------- summary ---------- */
+  #summary{position:fixed;inset:0;z-index:20;background:rgba(9,7,24,.94);backdrop-filter:blur(14px);
+    display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 18px)}
+  #summary.on{display:flex}
+  #summary h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.01em}
+  #summary p.lede{margin:6px 0 16px;color:var(--muted);font-size:13.5px;line-height:1.5}
+  #grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding-bottom:16px;
+    -webkit-overflow-scrolling:touch}
+  .thumb{position:relative;border-radius:7px;overflow:hidden;background:#1b1640;aspect-ratio:1/1.4}
+  .thumb img{width:100%;height:100%;display:block}
+  .thumb.hit{box-shadow:0 0 0 2px var(--gold),0 8px 22px -8px rgba(255,209,92,.7)}
+  .thumb.rev{box-shadow:0 0 0 2px var(--foil)}
+  .tag{position:absolute;left:4px;bottom:4px;font-size:8.5px;font-weight:700;letter-spacing:.08em;
+    padding:2.5px 5px;border-radius:4px;background:rgba(0,0,0,.7)}
+  .tag.g{color:#131033;background:var(--gold)}
+  .tag.t{color:#131033;background:var(--foil)}
+  #summary .row.foot{gap:10px}
+  #summary .cta{flex:1}
+  @media (prefers-reduced-motion: reduce){*{transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<canvas id="fx"></canvas>
+
+<div id="hud">
+  <div class="row">
+    <div class="wordmark">KANTO SERIES<span>10 CARDS PER PACK</span></div>
+    <div style="display:flex;gap:8px">
+      <button class="iconbtn" id="tiltbtn" aria-label="Use phone tilt for the holo shine" hidden>✦</button>
+      <button class="iconbtn" id="sound" aria-label="Mute sound">♪</button>
+    </div>
+  </div>
+
+  <div id="banner"><div class="big" id="bannerBig">HOLO</div><div class="sub" id="bannerSub">RARE PULL</div></div>
+
+  <div id="meter"><i></i></div>
+
+  
+  </div>
+
+  <div id="bottom">
+    <div id="pips"></div>
+    <div id="hint">Drag across the top of the pack to tear it open</div>
+    <button class="cta" id="action" style="display:none">Open the pack</button>
+  </div>
+</div>
+
+<div id="summary">
+  <h2>Your pull</h2>
+  <p class="lede" id="sumLede"></p>
+  <div id="grid"></div>
+  <div class="row foot">
+    <button class="cta" id="again">Open another pack</button>
+  </div>
+</div>
+
+<div id="boot"><div class="bootbox"><b id="bootTitle">Loading the pack…</b><div id="bootStatus">Getting the 3D engine ready.</div><div class="bootbar"><i id="bootProgress"></i></div><div id="bootPercent">0%</div></div></div>
+
+
+
+<!-- SPRITE_DATA: the 151 sprites as base64 data URIs, generated by
+     bundle-sprites.py. loadSpriteImage checks window.SPRITE_DATA first, so this
+     skips the network entirely. If the file is missing the tag simply 404s and
+     the loader falls back to its CDN chain. -->
+<script src="sprites-data.js"></script>
+
+<script>
+window.bootPackOpener = function(){
+"use strict";
+
+/* ============================================================
+   1. DATA — Gen 1 roster, grouped by pull rarity
+   ============================================================ */
+const TYPES = {
+  G:{name:"Grass",    hue:132, c:"#59b95f", d:"#22602f", light:"#bfe6a8", ink:"#123018"},
+  R:{name:"Fire",     hue:16,  c:"#f2683c", d:"#8a2a14", light:"#ffc4a1", ink:"#3a1206"},
+  W:{name:"Water",    hue:205, c:"#3d9ae0", d:"#124a80", light:"#b6ddf7", ink:"#082740"},
+  L:{name:"Lightning",hue:47,  c:"#f2c331", d:"#8a6404", light:"#ffeaa6", ink:"#3a2c02"},
+  P:{name:"Psychic",  hue:288, c:"#a45cc4", d:"#57216e", light:"#e0bbf0", ink:"#2d0f3a"},
+  F:{name:"Fighting", hue:24,  c:"#b5754a", d:"#6a3a1c", light:"#e6c3a3", ink:"#331a0b"},
+  C:{name:"Colorless",hue:220, c:"#b9bdcc", d:"#5d6376", light:"#e8eaf1", ink:"#23262f"}
+};
+const WEAK = {G:"R",R:"W",W:"L",L:"F",P:"P",F:"P",C:"F"};
+const RESIST = {G:"W",W:"",R:"",L:"F",P:"",F:"",C:"F"};
+
+const DEX = {
+  C:`Bulbasaur,G,60;Charmander,R,50;Squirtle,W,50;Caterpie,G,40;Weedle,G,40;Pidgey,C,40;Rattata,C,30;
+Spearow,C,50;Ekans,G,40;Pikachu,L,40;Sandshrew,F,40;Clefairy,C,40;Jigglypuff,C,50;Zubat,G,40;Oddish,G,50;
+Paras,G,40;Venonat,G,40;Diglett,F,30;Meowth,C,50;Psyduck,W,50;Mankey,F,30;Growlithe,R,60;Vulpix,R,50;Poliwag,W,40;
+Abra,P,30;Machop,F,50;Bellsprout,G,40;Tentacool,W,30;Geodude,F,50;Ponyta,R,40;Slowpoke,P,50;Magnemite,L,40;
+Doduo,C,50;Seel,W,60;Grimer,G,40;Shellder,W,30;Gastly,P,30;Drowzee,P,50;Krabby,W,50;Voltorb,L,40;
+Exeggcute,G,50;Cubone,F,40;Koffing,G,50;Rhyhorn,F,70;Horsea,W,40;Goldeen,W,40;Staryu,W,40;Magikarp,W,30;
+Eevee,C,50;Omanyte,W,40;Kabuto,F,30;Dratini,C,40;Porygon,C,30;Ditto,C,50;Nidoran♀,G,60;Nidoran♂,G,50`,
+
+  U:`Ivysaur,G,80;Charmeleon,R,80;Wartortle,W,70;Metapod,G,70;Kakuna,G,80;Pidgeotto,C,60;Raticate,C,60;
+Fearow,C,70;Arbok,G,60;Sandslash,F,70;Nidorina,G,70;Nidorino,G,60;Gloom,G,60;Parasect,G,60;Dugtrio,F,70;
+Persian,C,70;Golduck,W,70;Primeape,F,70;Poliwhirl,W,60;Kadabra,P,60;Machoke,F,80;Weepinbell,G,70;Venomoth,G,70;
+Tentacruel,W,80;Graveler,F,80;Rapidash,R,70;Slowbro,P,80;Magneton,L,60;Farfetch'd,C,50;Dodrio,C,70;
+Dewgong,W,80;Muk,G,70;Cloyster,W,50;Haunter,P,60;Onix,F,90;Hypno,P,90;Kingler,W,60;Electrode,L,80;
+Marowak,F,60;Weezing,G,60;Seadra,W,70;Seaking,W,70;Starmie,W,60;Tangela,G,50;Lickitung,C,90;Mr. Mime,P,40;
+Raichu,L,80;Golbat,G,60;Wigglytuff,C,80`,
+
+  R:`Venusaur,G,140;Charizard,R,150;Blastoise,W,140;Butterfree,G,90;Beedrill,G,90;Pidgeot,C,110;
+Nidoqueen,G,120;Nidoking,G,120;Clefable,C,100;Ninetales,R,110;Vileplume,G,110;Victreebel,G,110;Golem,F,130;
+Alakazam,P,110;Machamp,F,140;Gengar,P,120;Exeggutor,G,120;Hitmonlee,F,100;Hitmonchan,F,100;Rhydon,F,130;
+Chansey,C,120;Kangaskhan,C,110;Gyarados,W,130;Lapras,W,120;Vaporeon,W,110;Jolteon,L,100;Flareon,R,100;
+Omastar,W,100;Kabutops,F,100;Aerodactyl,C,110;Snorlax,C,160;Articuno,W,120;Zapdos,L,120;Moltres,R,120;
+Dragonair,C,90;Dragonite,C,140;Mewtwo,P,130;Mew,P,90;Poliwrath,W,120;Arcanine,R,130;Magmar,R,90;
+Electabuzz,L,90;Jynx,P,90;Scyther,G,100;Pinsir,G,100;Tauros,C,100`
+};
+
+function parseDex(str, rarity){
+  return str.split(";").map(s=>s.trim()).filter(Boolean).map(s=>{
+    const p = s.split(",");
+    return {name:p[0], type:p[1], hp:parseInt(p[2],10), rarity:rarity};
+  });
+}
+const POOL = {C:parseDex(DEX.C,"C"), U:parseDex(DEX.U,"U"), R:parseDex(DEX.R,"R")};
+// Real National Dex order — also used to resolve {id} in an art URL template.
+const DEX_ORDER = ("Bulbasaur,Ivysaur,Venusaur,Charmander,Charmeleon,Charizard,Squirtle,Wartortle,Blastoise,"+
+"Caterpie,Metapod,Butterfree,Weedle,Kakuna,Beedrill,Pidgey,Pidgeotto,Pidgeot,Rattata,Raticate,Spearow,Fearow,"+
+"Ekans,Arbok,Pikachu,Raichu,Sandshrew,Sandslash,Nidoran♀,Nidorina,Nidoqueen,Nidoran♂,Nidorino,Nidoking,"+
+"Clefairy,Clefable,Vulpix,Ninetales,Jigglypuff,Wigglytuff,Zubat,Golbat,Oddish,Gloom,Vileplume,Paras,Parasect,"+
+"Venonat,Venomoth,Diglett,Dugtrio,Meowth,Persian,Psyduck,Golduck,Mankey,Primeape,Growlithe,Arcanine,Poliwag,"+
+"Poliwhirl,Poliwrath,Abra,Kadabra,Alakazam,Machop,Machoke,Machamp,Bellsprout,Weepinbell,Victreebel,Tentacool,"+
+"Tentacruel,Geodude,Graveler,Golem,Ponyta,Rapidash,Slowpoke,Slowbro,Magnemite,Magneton,Farfetch'd,Doduo,Dodrio,"+
+"Seel,Dewgong,Grimer,Muk,Shellder,Cloyster,Gastly,Haunter,Gengar,Onix,Drowzee,Hypno,Krabby,Kingler,Voltorb,"+
+"Electrode,Exeggcute,Exeggutor,Cubone,Marowak,Hitmonlee,Hitmonchan,Lickitung,Koffing,Weezing,Rhyhorn,Rhydon,"+
+"Chansey,Tangela,Kangaskhan,Horsea,Seadra,Goldeen,Seaking,Staryu,Starmie,Mr. Mime,Scyther,Jynx,Electabuzz,"+
+"Magmar,Pinsir,Tauros,Magikarp,Gyarados,Lapras,Ditto,Eevee,Vaporeon,Jolteon,Flareon,Porygon,Omanyte,Omastar,"+
+"Kabuto,Kabutops,Aerodactyl,Snorlax,Articuno,Zapdos,Moltres,Dratini,Dragonair,Dragonite,Mewtwo,Mew").split(",");
+const NUMBERS = {};
+DEX_ORDER.forEach((n,i)=>{ NUMBERS[n] = i+1; });
+
+const MOVES = {
+  G:["Vine Lash","Spore Cloud","Razor Frond","Sap Drain","Pollen Burst","Tangle Up","Seed Shot"],
+  R:["Ember Toss","Flare Up","Heat Wave","Cinder Rush","Blaze Kick","Scorch","Fire Fang"],
+  W:["Bubble Beam","Riptide","Aqua Jet","Tidal Slam","Mist Veil","Whirlpool","Splash Back"],
+  L:["Spark","Static Jab","Thunder Wave","Overload","Live Wire","Chain Bolt","Short Circuit"],
+  P:["Mind Bend","Hypno Gaze","Psy Pulse","Dreamwalk","Warp Step","Mind Shatter","Confuse Ray"],
+  F:["Rock Throw","Low Sweep","Stone Fist","Tremor","Headbutt","Crag Smash","Take Down"],
+  C:["Quick Attack","Tackle","Wing Slap","Slam","Pounce","Double Strike","Gust"]
+};
+const FLAVOR = {
+  G:"Sleeps in dense undergrowth and wakes only at first light.",
+  R:"Its body temperature climbs when it senses a challenger.",
+  W:"Rides the current for hours without surfacing once.",
+  L:"Builds a charge in its cheeks that makes the air crackle.",
+  P:"Bends nearby objects without ever touching them.",
+  F:"Trains on rock faces until its knuckles turn to stone.",
+  C:"Travels in small groups and never strays far from the flock."
+};
+
+/* ============================================================
+   2. Small utilities
+   ============================================================ */
+function hashStr(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;} return h>>>0; }
+function mulberry32(a){ return function(){ a|=0;a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const easeOut=t=>1-Math.pow(1-t,3);
+const easeInOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const back=t=>{const c=1.70158+1;return 1+ c*Math.pow(t-1,3)+1.70158*Math.pow(t-1,2);};
+function pick(rng,arr){ return arr[Math.floor(rng()*arr.length)]; }
+function rr(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function shade(hex, amt){ // amt -1..1
+  const n=parseInt(hex.slice(1),16);
+  let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  if(amt>0){r=r+(255-r)*amt;g=g+(255-g)*amt;b=b+(255-b)*amt;}
+  else{r*=1+amt;g*=1+amt;b*=1+amt;}
+  return "rgb("+(r|0)+","+(g|0)+","+(b|0)+")";
+}
+
+
+/* ============================================================
+   3. Sprite art
+   ============================================================ */
+// Sprites are keyed by National Dex number (NUMBERS[name]) rather than by a
+// slugified name. That removes the per-name filename mapping the old host
+// needed for Nidoran♀/♂, Farfetch'd and Mr. Mime.
+//
+// crossOrigin is mandatory here, not cosmetic: each card face is drawn to a 2D
+// canvas which THREE uploads as a WebGL texture, and a canvas tainted by a
+// non-CORS image makes that upload throw SecurityError. The previous host
+// (projectpokemon.org) sends no Access-Control-Allow-Origin, so every sprite
+// downloaded and was then discarded by the browser. Every host below sends
+// Access-Control-Allow-Origin: *.
+const SPRITE_PATH = "sprites/pokemon/versions/generation-i/red-blue/transparent";
+const SPRITE_HOSTS = [
+  // jsdelivr first: three.js already loads from it, so it is known reachable.
+  id => "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/" + SPRITE_PATH + "/" + id + ".png",
+  id => "https://raw.githubusercontent.com/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png",
+  id => "https://cdn.statically.io/gh/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png",
+  id => "https://images.weserv.nl/?url=" + encodeURIComponent(
+          "raw.githubusercontent.com/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png")
+];
+const SPRITE_IMAGES = {};
+const SPRITE_FAILURES = [];
+
+let bootProgressValue = 0;
+function setBootProgress(percent, status){
+  bootProgressValue = Math.max(0, Math.min(100, percent));
+  const bar=document.getElementById("bootProgress");
+  const pct=document.getElementById("bootPercent");
+  const st=document.getElementById("bootStatus");
+  if(bar) bar.style.width=bootProgressValue+"%";
+  if(pct) pct.textContent=Math.round(bootProgressValue)+"%";
+  if(st && status) st.textContent=status;
+}
+
+// Resolve to the decoded <img> or null. A host that hangs is treated as a
+// failure so one dead origin cannot stall the whole preload.
+function loadImageFrom(src, timeoutMs, useCors){
+  return new Promise(resolve=>{
+    const img = new Image();
+    if(useCors) img.crossOrigin = "anonymous";
+    let settled = false, timer = 0;
+    const finish = ok => {
+      if(settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok ? img : null);
+    };
+    timer = setTimeout(()=>finish(false), timeoutMs);
+    img.onload  = ()=>finish(Boolean(img.naturalWidth));
+    img.onerror = ()=>finish(false);
+    img.src = src;
+  });
+}
+
+async function loadSpriteImage(mon){
+  const id = NUMBERS[mon.name];
+  if(!id) return false;
+  // Bundled sprites (sprites-data.js) skip the network entirely. A data: URI
+  // never taints the canvas, so crossOrigin is neither needed nor wanted.
+  const bundled = window.SPRITE_DATA && window.SPRITE_DATA[id];
+  if(bundled){
+    const img = await loadImageFrom(bundled, 10000, false);
+    if(img){ SPRITE_IMAGES[mon.name] = img; return true; }
+  }
+  for(let i=0;i<SPRITE_HOSTS.length;i++){
+    const url = SPRITE_HOSTS[i](id);
+    const img = await loadImageFrom(url, 6000, true);
+    if(img){ SPRITE_IMAGES[mon.name] = img; return true; }
+    if(i === SPRITE_HOSTS.length-1) SPRITE_FAILURES.push(mon.name + " -> " + url);
+  }
+  return false;
+}
+
+async function preloadSpriteImages(){
+  const all = DEX_ORDER.map(name=>({name:name}));
+  const bundled = Boolean(window.SPRITE_DATA);
+  let done = 0, failed = 0, next = 0;
+  SPRITE_FAILURES.length = 0;
+  setBootProgress(8, bundled ? "Decoding bundled sprites…" : "Preparing 151 Pokémon images…");
+  // A fixed pool of workers rather than serial batches: one slow or dead
+  // request no longer stalls the nine others sitting in its batch.
+  const CONCURRENCY = 12;
+  async function worker(){
+    while(next < all.length){
+      const mon = all[next++];
+      const ok = await loadSpriteImage(mon);
+      if(!ok) failed++;
+      done++;
+      setBootProgress(8 + (done/all.length)*87, `Loading Pokémon artwork… ${done}/${all.length}`);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(CONCURRENCY, all.length)}, worker));
+  if(failed){
+    setBootProgress(100, `Artwork ready — ${failed} image${failed===1?"":"s"} unavailable.`);
+    // The draw site degrades to drawCreature silently, so the console is the
+    // only place a failure is visible. Log the URLs that were actually tried.
+    console.warn(`[art] ${failed}/${all.length} sprites failed:`, SPRITE_FAILURES);
+  } else {
+    setBootProgress(100, "All Pokémon artwork loaded.");
+    console.info(`[art] ${all.length}/${all.length} sprites loaded` + (bundled ? " from the bundle." : " from the network."));
+  }
+  return {done, failed};
+}
+function drawTypeGlyph(ctx,type,cx,cy,r,color){
+  ctx.save(); ctx.translate(cx,cy); ctx.fillStyle=color; ctx.strokeStyle=color;
+  ctx.lineWidth=r*0.24; ctx.lineCap="round"; ctx.lineJoin="round";
+  if(type==="G"){
+    ctx.beginPath(); ctx.moveTo(0,r*.9);
+    ctx.bezierCurveTo(-r*1.1,r*.2,-r*.7,-r,0,-r);
+    ctx.bezierCurveTo(r*.7,-r,r*1.1,r*.2,0,r*.9); ctx.fill();
+  } else if(type==="R"){
+    ctx.beginPath(); ctx.moveTo(0,-r);
+    ctx.bezierCurveTo(r*.9,-r*.1,r*.5,r*.9,0,r);
+    ctx.bezierCurveTo(-r*.5,r*.9,-r*.9,-r*.1,0,-r); ctx.fill();
+  } else if(type==="W"){
+    ctx.beginPath(); ctx.moveTo(0,-r);
+    ctx.bezierCurveTo(r*.85,-r*.05,r*.75,r,0,r);
+    ctx.bezierCurveTo(-r*.75,r,-r*.85,-r*.05,0,-r); ctx.fill();
+  } else if(type==="L"){
+    ctx.beginPath(); ctx.moveTo(r*.35,-r); ctx.lineTo(-r*.55,r*.12);
+    ctx.lineTo(-r*.02,r*.12); ctx.lineTo(-r*.3,r); ctx.lineTo(r*.6,-r*.2);
+    ctx.lineTo(r*.05,-r*.2); ctx.closePath(); ctx.fill();
+  } else if(type==="P"){
+    ctx.beginPath(); ctx.arc(0,0,r*.95,0,Math.PI*2); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation="destination-out";
+    ctx.beginPath(); ctx.arc(r*.16,-r*.1,r*.42,0,Math.PI*2); ctx.fill(); ctx.restore();
+  } else if(type==="F"){
+    ctx.beginPath(); ctx.moveTo(-r*.9,0); ctx.lineTo(0,-r*.9); ctx.lineTo(r*.9,0);
+    ctx.lineTo(0,r*.9); ctx.closePath(); ctx.fill();
+  } else {
+    ctx.beginPath();
+    for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5; const rad=i%2?r*.44:r; ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad); }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function hsl(h,s,l){ h=((h%360)+360)%360; return "hsl("+(h|0)+","+(clamp(s,5,100)|0)+"%,"+(clamp(l,4,96)|0)+"%)"; }
+
+function drawArtBackdrop(ctx, W, H, mon){
+  const rng = mulberry32(hashStr(mon.name+"\u00b7bg2"));
+  const T = TYPES[mon.type];
+
+  const bg = ctx.createLinearGradient(W*rng()*0.6, 0, W*0.5, H);
+  bg.addColorStop(0, shade(T.c, 0.32+rng()*0.34));
+  bg.addColorStop(0.55, T.c);
+  bg.addColorStop(1, shade(T.d, rng()*0.22));
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  const style = Math.floor(rng()*4);
+  ctx.save();
+  if(style===0){
+    ctx.globalAlpha=.13; ctx.translate(W*(0.3+rng()*0.4), H*(0.08+rng()*0.24));
+    ctx.rotate(rng()*0.6-0.3); ctx.fillStyle="#fff";
+    const n=7+Math.floor(rng()*7);
+    for(let i=0;i<n;i++){ ctx.save(); ctx.rotate(i*Math.PI*2/n);
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-W*0.05,H*2.2); ctx.lineTo(W*0.05,H*2.2);
+      ctx.closePath(); ctx.fill(); ctx.restore(); }
+  } else if(style===1){
+    ctx.globalAlpha=.15; ctx.strokeStyle="#fff"; ctx.lineWidth=Math.max(2,W*0.008);
+    const rx=W*(0.32+rng()*0.34), ry=H*(0.3+rng()*0.36);
+    for(let i=1;i<=8;i++){ ctx.beginPath(); ctx.arc(rx,ry,i*W*0.075,0,7); ctx.stroke(); }
+  } else if(style===2){
+    ctx.globalAlpha=.19; ctx.fillStyle="#fff";
+    for(let j=0;j<2;j++){
+      const base=H*(0.6+j*0.13);
+      ctx.beginPath(); ctx.moveTo(-10,H); ctx.lineTo(-10,base);
+      for(let x=0;x<=W;x+=W/6) ctx.quadraticCurveTo(x+W/12, base-H*(0.05+rng()*0.13), x+W/6, base);
+      ctx.lineTo(W+10,H); ctx.closePath(); ctx.fill();
+    }
+  } else {
+    ctx.globalAlpha=.14; ctx.fillStyle="#fff";
+    for(let i=0;i<22;i++){ const x=rng()*W,y=rng()*H,r=W*(0.014+rng()*0.032);
+      ctx.save(); ctx.translate(x,y); ctx.rotate(rng()*3);
+      ctx.beginPath(); ctx.moveTo(0,-r); ctx.lineTo(r*0.7,0); ctx.lineTo(0,r); ctx.lineTo(-r*0.7,0);
+      ctx.closePath(); ctx.fill(); ctx.restore(); }
+  }
+  ctx.restore();
+
+  const gl = ctx.createRadialGradient(W*.5,H*.75,4,W*.5,H*.75,W*.66);
+  gl.addColorStop(0,"rgba(255,255,255,.32)"); gl.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=gl; ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle="rgba(255,255,255,.5)";
+  for(let i=0;i<14;i++){ const x=rng()*W,y=rng()*H*.9,r=1+rng()*2.6;
+    ctx.globalAlpha=.18+rng()*.4; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+  ctx.globalAlpha=1;
+}
+
+/* Original creature generator. Seven body plans with independently varied
+   proportions, palette, face and surface pattern, so two cards of the same
+   type don't come out looking like the same animal twice. */
+function drawCreature(ctx, X, Y, W, H, mon){
+  const rng = mulberry32(hashStr(mon.name+"\u00b7v2"));
+  const T = TYPES[mon.type];
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(X,Y,W,H); ctx.clip();
+  ctx.translate(X,Y);
+  drawArtBackdrop(ctx, W, H, mon);
+
+  const h  = T.hue + rng()*84 - 42;
+  const sa = 38 + rng()*42;
+  const li = 44 + rng()*18;
+  const C   = hsl(h, sa, li);
+  const CD  = hsl(h + rng()*14-7, sa+12, li-21);
+  const CL  = hsl(h + rng()*44-22, sa*0.65, li+32);
+  const CA  = hsl(h + 110 + rng()*140, 72, 56);
+  const OUT = hsl(h, 42, 13);
+  const OL  = Math.max(3, W*0.0105);
+  const ground = H*0.885, cx = W*0.5;
+
+  ctx.lineJoin="round"; ctx.lineCap="round";
+  function ink(){ ctx.strokeStyle=OUT; ctx.lineWidth=OL; }
+  function ell(x,y,rx,ry,rot,col){ ink(); ctx.fillStyle=col;
+    ctx.beginPath(); ctx.ellipse(x,y,Math.abs(rx),Math.abs(ry),rot||0,0,7); ctx.stroke(); ctx.fill(); }
+  function poly(pts,col){ ink(); ctx.fillStyle=col; ctx.beginPath();
+    pts.forEach((p,i)=> i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke(); ctx.fill(); }
+  function shadow(x,y,rx){ ctx.save(); ctx.globalAlpha=.2; ctx.fillStyle="#000";
+    ctx.beginPath(); ctx.ellipse(x,y,rx,rx*0.2,0,0,7); ctx.fill(); ctx.restore(); }
+  function limb(x1,y1,x2,y2,w,col){
+    ctx.lineCap="round"; ctx.strokeStyle=OUT; ctx.lineWidth=w+OL*1.4;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.strokeStyle=col; ctx.lineWidth=w;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+  function curveLimb(x1,y1,mx,my,x2,y2,w,col){
+    ctx.strokeStyle=OUT; ctx.lineWidth=w+OL*1.4;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.quadraticCurveTo(mx,my,x2,y2); ctx.stroke();
+    ctx.strokeStyle=col; ctx.lineWidth=w;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.quadraticCurveTo(mx,my,x2,y2); ctx.stroke();
+  }
+
+  const eyeStyle = Math.floor(rng()*4);
+  const mouthStyle = Math.floor(rng()*4);
+  const eyeScale = 0.65 + rng()*0.8;
+  const eyeSpread = 0.34 + rng()*0.2;
+  function face(fx, fy, r){
+    const eR = r*0.26*eyeScale, dx = r*eyeSpread;
+    for(const sg of [-1,1]){
+      const ex = fx+sg*dx, ey = fy;
+      if(eyeStyle===3){
+        ctx.strokeStyle=OUT; ctx.lineWidth=OL*1.3; ctx.beginPath();
+        ctx.moveTo(ex-eR*0.85, ey+eR*0.15); ctx.lineTo(ex+eR*0.85, ey-eR*0.25); ctx.stroke();
+        continue;
+      }
+      ctx.fillStyle="#fff"; ctx.strokeStyle=OUT; ctx.lineWidth=OL*0.8;
+      ctx.beginPath(); ctx.ellipse(ex, ey, eR*(eyeStyle===1?0.68:0.95), eR, 0,0,7); ctx.stroke(); ctx.fill();
+      ctx.fillStyle="#16121d";
+      ctx.beginPath(); ctx.arc(ex+eR*0.1, ey+eR*0.08, eR*(eyeStyle===2?0.62:0.46),0,7); ctx.fill();
+      ctx.fillStyle="#fff";
+      ctx.beginPath(); ctx.arc(ex+eR*0.3, ey-eR*0.26, eR*0.2,0,7); ctx.fill();
+    }
+    ctx.strokeStyle=OUT; ctx.lineWidth=OL;
+    const my = fy + r*0.44, mw = r*0.2;
+    ctx.beginPath();
+    if(mouthStyle===0){ ctx.moveTo(fx-mw,my); ctx.quadraticCurveTo(fx,my+r*0.24,fx+mw,my); ctx.stroke(); }
+    else if(mouthStyle===1){ ctx.moveTo(fx-mw,my); ctx.lineTo(fx,my+r*0.2); ctx.lineTo(fx+mw,my); ctx.stroke(); }
+    else if(mouthStyle===2){ ctx.moveTo(fx-mw,my+r*0.14); ctx.quadraticCurveTo(fx,my-r*0.08,fx+mw,my+r*0.14); ctx.stroke(); }
+    else { ctx.fillStyle=hsl(h+330,58,30);
+      ctx.ellipse(fx,my+r*0.04,mw*0.6,r*0.14,0,0,7); ctx.fill(); ctx.stroke(); }
+  }
+
+  const patt = Math.floor(rng()*4);
+  function pattern(x,y,rx,ry){
+    if(patt===3) return;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(x,y,rx,ry,0,0,7); ctx.clip();
+    if(patt===0){ ctx.globalAlpha=.45; ctx.fillStyle=CD;
+      for(let i=0;i<5;i++){ ctx.beginPath();
+        ctx.ellipse(x-rx*0.7+rng()*rx*1.4, y-ry*0.6+rng()*ry*1.2, rx*0.16, ry*0.13, rng(),0,7); ctx.fill(); } }
+    else if(patt===1){ ctx.globalAlpha=.4; ctx.strokeStyle=CD; ctx.lineWidth=OL*1.8;
+      for(let i=-2;i<=2;i++){ ctx.beginPath();
+        ctx.moveTo(x-rx, y+i*ry*0.36); ctx.lineTo(x+rx, y+i*ry*0.36 - ry*0.16); ctx.stroke(); } }
+    else { ctx.globalAlpha=.85; ctx.fillStyle=CL;
+      ctx.beginPath(); ctx.ellipse(x, y+ry*0.34, rx*0.56, ry*0.5, 0,0,7); ctx.fill(); }
+    ctx.restore();
+  }
+
+  const crest = Math.floor(rng()*5);
+  function crests(fx, fy, r){
+    if(crest===0) return;
+    if(crest===1){ for(const sg of [-1,1]) poly([
+        [fx+sg*r*0.5, fy-r*0.62],[fx+sg*r*1.02, fy-r*1.72],[fx+sg*r*0.06, fy-r*0.96]], C); }
+    else if(crest===2){ for(const sg of [-1,1]) ell(fx+sg*r*0.86, fy-r*0.8, r*0.24, r*0.58, sg*0.5, C); }
+    else if(crest===3){ poly([[fx-r*0.22,fy-r*0.84],[fx,fy-r*1.66],[fx+r*0.22,fy-r*0.84]], CA); }
+    else { for(const sg of [-1,1]){
+        curveLimb(fx+sg*r*0.3, fy-r*0.78, fx+sg*r*0.9, fy-r*1.5, fx+sg*r*0.55, fy-r*1.9, OL*1.2, C);
+        ell(fx+sg*r*0.55, fy-r*1.96, r*0.17, r*0.17, 0, CA); } }
+  }
+
+  const plan = ["blob","biped","quad","serpent","floater","winged","shell"][Math.floor(rng()*7)];
+  const bulk = clamp(0.76 + (mon.hp/170)*0.36, 0.76, 1.12);
+
+  if(plan==="blob"){
+    const rx = W*(0.20+rng()*0.10)*bulk, ry = rx*(0.68+rng()*0.5);
+    const by = ground - ry*0.94;
+    shadow(cx, ground+ry*0.06, rx*1.02);
+    for(const sg of [-1,1]) ell(cx+sg*rx*0.52, ground-ry*0.08, rx*0.26, ry*0.17, 0, CD);
+    ell(cx, by, rx, ry, 0, C);
+    pattern(cx, by, rx, ry);
+    crests(cx, by-ry*0.1, rx*0.75);
+    face(cx, by-ry*0.02, rx*0.8);
+
+  } else if(plan==="biped"){
+    const rx = W*(0.12+rng()*0.06)*bulk, ry = rx*(1.15+rng()*0.55);
+    const legL = H*(0.10+rng()*0.07);
+    const by = ground - legL - ry*0.9;
+    const headR = rx*(0.72+rng()*0.3);
+    const hy = by - ry - headR*0.62;
+    shadow(cx, ground+2, rx*1.1);
+    for(const sg of [-1,1]) limb(cx+sg*rx*0.42, by+ry*0.6, cx+sg*rx*0.56, ground-OL, OL*2.2, C);
+    for(const sg of [-1,1]) ell(cx+sg*rx*0.62, ground-OL*1.4, rx*0.3, ry*0.12, 0, CD);
+    for(const sg of [-1,1]) curveLimb(cx+sg*rx*0.8, by-ry*0.1, cx+sg*rx*1.5, by+ry*0.2, cx+sg*rx*1.15, by+ry*0.6, OL*2, C);
+    ell(cx, by, rx, ry, 0, C);
+    pattern(cx, by, rx, ry);
+    ell(cx, hy, headR*1.04, headR, 0, C);
+    crests(cx, hy, headR);
+    face(cx, hy+headR*0.04, headR*0.94);
+
+  } else if(plan==="quad"){
+    const rx = W*(0.17+rng()*0.08)*bulk, ry = rx*(0.46+rng()*0.22);
+    const legL = H*(0.08+rng()*0.06);
+    const by = ground - legL - ry*0.8;
+    const dir = rng()<0.5 ? -1 : 1;
+    const headR = rx*(0.44+rng()*0.18);
+    const hx = cx + dir*(rx*0.92), hy = by - ry*0.62;
+    shadow(cx, ground+2, rx*1.15);
+    curveLimb(cx-dir*rx*0.94, by, cx-dir*rx*1.5, by-ry*0.5, cx-dir*rx*1.6, by-ry*1.3, OL*2.2, CD);
+    for(const o of [-0.62,-0.2,0.24,0.66]) limb(cx+o*rx, by+ry*0.62, cx+o*rx*1.1, ground-OL, OL*2.1, CD);
+    ell(cx, by, rx, ry, 0, C);
+    pattern(cx, by, rx, ry);
+    curveLimb(hx-dir*rx*0.2, by-ry*0.2, hx, hy+headR*0.5, hx, hy+headR*0.2, OL*3.2, C);
+    ell(hx, hy, headR*1.05, headR, 0, C);
+    crests(hx, hy, headR);
+    face(hx, hy+headR*0.04, headR*0.92);
+
+  } else if(plan==="serpent"){
+    const segs = 5+Math.floor(rng()*3);
+    const amp = W*(0.10+rng()*0.09);
+    const top = H*(0.24+rng()*0.1);
+    const span = ground-top;
+    shadow(cx, ground+2, amp*1.5);
+    ctx.strokeStyle=OUT; ctx.lineCap="round";
+    for(let pass=0; pass<2; pass++){
+      ctx.strokeStyle = pass? C : OUT;
+      ctx.beginPath();
+      for(let i=0;i<=segs;i++){
+        const t=i/segs, y=ground-span*t, x=cx+Math.sin(t*Math.PI*1.9+rng()*0.001)*amp*(1-t*0.35);
+        i? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      }
+      ctx.lineWidth = (pass? W*0.085 : W*0.085+OL*2)*bulk;
+      ctx.stroke();
+    }
+    const headR = W*0.075*bulk*(1.1+rng()*0.4);
+    const hy = top - headR*0.2, hx = cx+Math.sin(Math.PI*1.9)*amp*0.65;
+    ell(hx, hy, headR*1.1, headR, 0, C);
+    crests(hx, hy, headR);
+    face(hx, hy+headR*0.04, headR*0.95);
+
+  } else if(plan==="floater"){
+    const r = W*(0.13+rng()*0.07)*bulk;
+    const by = ground - r*2.0;
+    shadow(cx, ground, r*0.8);
+    const orbit = 2+Math.floor(rng()*3);
+    for(let i=0;i<orbit;i++){
+      const a = rng()*Math.PI*2, d = r*(1.5+rng()*0.55);
+      ell(cx+Math.cos(a)*d, by+Math.sin(a)*d*0.7, r*0.22, r*0.22, 0, CA);
+    }
+    if(rng()<0.5) for(const sg of [-1,1])
+      curveLimb(cx+sg*r*0.5, by+r*0.85, cx+sg*r*0.9, by+r*1.6, cx+sg*r*0.4, by+r*2.0, OL*1.4, CD);
+    ell(cx, by, r, r*(0.9+rng()*0.3), 0, C);
+    pattern(cx, by, r, r);
+    crests(cx, by, r*0.9);
+    face(cx, by, r*0.95);
+
+  } else if(plan==="winged"){
+    const rx = W*(0.11+rng()*0.05)*bulk, ry = rx*(1.0+rng()*0.4);
+    const by = ground - H*0.13 - ry*0.8;
+    shadow(cx, ground+2, rx*1.3);
+    for(const sg of [-1,1]) poly([
+      [cx+sg*rx*0.55, by-ry*0.35],
+      [cx+sg*rx*2.5,  by-ry*1.25],
+      [cx+sg*rx*2.25, by+ry*0.22],
+      [cx+sg*rx*1.35, by-ry*0.1]], CL);
+    for(const sg of [-1,1]) limb(cx+sg*rx*0.4, by+ry*0.75, cx+sg*rx*0.5, ground-OL, OL*1.6, CD);
+    ell(cx, by, rx, ry, 0, C);
+    pattern(cx, by, rx, ry);
+    const headR = rx*0.82;
+    ell(cx, by-ry-headR*0.45, headR*1.02, headR, 0, C);
+    crests(cx, by-ry-headR*0.45, headR);
+    face(cx, by-ry-headR*0.42, headR*0.92);
+
+  } else {
+    const rx = W*(0.17+rng()*0.07)*bulk, ry = rx*(0.62+rng()*0.2);
+    const by = ground - ry*0.85;
+    shadow(cx, ground+ry*0.06, rx*1.05);
+    for(const sg of [-1,1]) ell(cx+sg*rx*0.72, ground-ry*0.14, rx*0.24, ry*0.2, sg*0.3, CD);
+    ell(cx, by+ry*0.24, rx*0.86, ry*0.62, 0, CL);
+    ink(); ctx.fillStyle=C;
+    ctx.beginPath(); ctx.ellipse(cx, by, rx, ry, 0, Math.PI, 0); ctx.closePath(); ctx.stroke(); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.ellipse(cx,by,rx,ry,0,Math.PI,0); ctx.clip();
+    ctx.globalAlpha=.5; ctx.strokeStyle=CD; ctx.lineWidth=OL*1.6;
+    for(let i=1;i<4;i++){ ctx.beginPath(); ctx.ellipse(cx,by,rx*(i/4),ry*(i/4),0,Math.PI,0); ctx.stroke(); }
+    ctx.restore();
+    const headR = rx*(0.36+rng()*0.14);
+    const hy = by - ry*0.1;
+    ell(cx, hy - headR*0.2, headR*1.05, headR, 0, C);
+    crests(cx, hy-headR*0.2, headR);
+    face(cx, hy-headR*0.16, headR*0.92);
+  }
+
+  ctx.save(); ctx.globalAlpha=.13;
+  drawTypeGlyph(ctx, mon.type, W*.85, H*.15, W*.085, "#fff");
+  ctx.restore();
+
+  ctx.restore();
+}
+
+/* ============================================================
+   4. Card faces
+   ============================================================ */
+const CARD_W = 512, CARD_H = 716;
+const CARD_FONT = '"Trebuchet MS","Segoe UI",Arial,sans-serif';
+
+function statsFor(mon){
+  const rng = mulberry32(hashStr(mon.name+"·stats"));
+  const moves = MOVES[mon.type].slice();
+  const a1 = moves.splice(Math.floor(rng()*moves.length),1)[0];
+  const a2 = moves.splice(Math.floor(rng()*moves.length),1)[0];
+  const two = mon.hp >= 70;
+  const base = Math.round((mon.hp/10)) * 2;
+  return {
+    attacks: two
+      ? [{cost:1, name:a1, dmg:base-10}, {cost:mon.hp>=110?3:2, name:a2, dmg:base+20}]
+      : [{cost:1, name:a1, dmg:Math.max(10,base-10)}],
+    retreat: mon.hp>=110?3:mon.hp>=70?2:1,
+    stage: mon.rarity==="C"?"Basic":mon.rarity==="U"?"Stage 1":"Stage 2"
+  };
+}
+
+function energyPip(ctx,x,y,r,type){
+  const T=TYPES[type];
+  const g=ctx.createRadialGradient(x-r*.3,y-r*.35,r*.1,x,y,r);
+  g.addColorStop(0,shade(T.c,.5)); g.addColorStop(1,T.d);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=r*.12; ctx.stroke();
+  drawTypeGlyph(ctx,type,x,y,r*.62,"rgba(255,255,255,.92)");
+}
+
+function raritySymbol(ctx,x,y,r,rarity,holo){
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle = holo ? "#c9971f" : "#22222a";
+  if(rarity==="C"){ ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.fill(); }
+  else if(rarity==="U"){ ctx.beginPath(); ctx.moveTo(0,-r); ctx.lineTo(r*.78,0); ctx.lineTo(0,r); ctx.lineTo(-r*.78,0); ctx.closePath(); ctx.fill(); }
+  else { ctx.beginPath();
+    for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5; const rad=i%2?r*.45:r*1.15; ctx.lineTo(Math.cos(a)*rad,Math.sin(a)*rad); }
+    ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+
+// Returns {front:canvas, mask:canvas}
+function buildCardFace(card){
+  const mon = card.mon, T = TYPES[mon.type], st = card.stats;
+  const c = document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
+  const ctx = c.getContext("2d");
+  const R = 30;
+
+  const artX=42, artY=136, artW=CARD_W-84, artH=286;
+
+  // --- border ---
+  const bg = ctx.createLinearGradient(0,0,CARD_W,CARD_H);
+  bg.addColorStop(0, shade(T.c,.34)); bg.addColorStop(.5, T.c); bg.addColorStop(1, T.d);
+  rr(ctx,0,0,CARD_W,CARD_H,R); ctx.fillStyle=bg; ctx.fill();
+  // border texture
+  ctx.save(); rr(ctx,0,0,CARD_W,CARD_H,R); ctx.clip();
+  ctx.globalAlpha=.16; ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+  for(let i=-CARD_H;i<CARD_W;i+=16){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+CARD_H,CARD_H); ctx.stroke(); }
+  ctx.restore();
+
+  // --- inner panel ---
+  const P=18;
+  rr(ctx,P,P,CARD_W-P*2,CARD_H-P*2,R-9);
+  const inner=ctx.createLinearGradient(0,P,0,CARD_H-P);
+  inner.addColorStop(0,"#fbfaf6"); inner.addColorStop(1, shade(T.light,.42));
+  ctx.fillStyle=inner; ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.22)"; ctx.lineWidth=2; ctx.stroke();
+
+  // --- header ---
+  // Laid out right to left from measured widths. Fixed x positions collided:
+  // a three-digit HP is wider than the gap that was reserved for it.
+  ctx.textBaseline="alphabetic";
+  ctx.font="800 40px "+CARD_FONT;
+  const hpNumW = ctx.measureText(String(mon.hp)).width;
+  ctx.font="700 17px "+CARD_FONT;
+  const hpLabW = ctx.measureText("HP").width;
+
+  const pipR = 19, pipCx = CARD_W - 46 - pipR;
+  const hpNumRight = pipCx - pipR - 10;
+  const hpLabRight = hpNumRight - hpNumW - 9;
+  const hpLeft     = hpLabRight - hpLabW;
+
+  ctx.font="700 11px "+CARD_FONT;
+  ctx.fillStyle="rgba(0,0,0,.55)";
+  ctx.fillText(st.stage.toUpperCase(), 44, 66);
+
+  const maxNameW = hpLeft - 42 - 16;
+  let nameSize=39;
+  ctx.font="800 "+nameSize+"px "+CARD_FONT;
+  while(ctx.measureText(mon.name).width > maxNameW && nameSize>22){
+    nameSize-=1; ctx.font="800 "+nameSize+"px "+CARD_FONT;
+  }
+  ctx.fillStyle=T.ink;
+  ctx.fillText(mon.name, 42, 106);
+
+  ctx.textAlign="right";
+  ctx.font="800 40px "+CARD_FONT; ctx.fillStyle=T.ink;
+  ctx.fillText(String(mon.hp), hpNumRight, 105);
+  ctx.font="700 17px "+CARD_FONT; ctx.fillStyle="rgba(0,0,0,.6)";
+  ctx.fillText("HP", hpLabRight, 102);
+  ctx.textAlign="left";
+  energyPip(ctx, pipCx, 92, pipR, mon.type);
+
+  // --- art window ---
+  ctx.save();
+  rr(ctx,artX-6,artY-6,artW+12,artH+12,10);
+  const fg=ctx.createLinearGradient(artX,artY,artX+artW,artY+artH);
+  fg.addColorStop(0,"#f6e9b8"); fg.addColorStop(.5,"#d9c37e"); fg.addColorStop(1,"#f0e2ad");
+  ctx.fillStyle=fg; ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=2; ctx.stroke();
+  ctx.restore();
+  // Use the actual Gen 1 (Red/Blue) sprite keyed by National Dex number.
+  // It is drawn into the existing art window so the card layout, holo
+  // mask, and Three.js flip/tilt behavior remain unchanged.
+  const sprite = SPRITE_IMAGES[mon.name];
+  if(sprite && sprite.complete && sprite.naturalWidth){
+    const pad = 10;
+    const boxX = artX + pad, boxY = artY + pad;
+    const boxW = artW - pad*2, boxH = artH - pad*2;
+    const scale = Math.min(boxW/sprite.naturalWidth, boxH/sprite.naturalHeight);
+    const dw = sprite.naturalWidth*scale, dh = sprite.naturalHeight*scale;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sprite, boxX + (boxW-dw)/2, boxY + (boxH-dh)/2, dw, dh);
+    ctx.restore();
+  } else {
+    // Only used if the sprite is missing (blocked host, or not yet loaded).
+    drawCreature(ctx, artX, artY, artW, artH, mon);
+  }
+  ctx.save(); ctx.strokeStyle="rgba(0,0,0,.3)"; ctx.lineWidth=2;
+  ctx.strokeRect(artX,artY,artW,artH); ctx.restore();
+
+  // --- info strip ---
+  ctx.fillStyle="rgba(0,0,0,.62)"; ctx.font="italic 12.5px "+CARD_FONT;
+  ctx.fillText(`No. ${String(NUMBERS[mon.name]).padStart(3,"0")}   ·   ${T.name} type   ·   Kanto Series`, 44, artY+artH+26);
+
+  // --- attacks ---
+  let y = artY+artH+52;
+  ctx.strokeStyle="rgba(0,0,0,.18)"; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(44,y); ctx.lineTo(CARD_W-44,y); ctx.stroke();
+  y += 12;
+  st.attacks.forEach((atk,ai)=>{
+    const rowH = 62;
+    let px = 54;
+    for(let i=0;i<atk.cost;i++){ energyPip(ctx, px, y+22, 15, i===0?mon.type:"C"); px += 34; }
+    ctx.fillStyle="#171520"; ctx.font="700 25px "+CARD_FONT;
+    ctx.fillText(atk.name, Math.max(px+6, 130), y+31);
+    ctx.textAlign="right"; ctx.font="800 30px "+CARD_FONT; ctx.fillStyle="#171520";
+    ctx.fillText(String(atk.dmg), CARD_W-48, y+32); ctx.textAlign="left";
+    y += rowH;
+    // rule between attacks only — a trailing one lands on top of the footer rule
+    if(ai < st.attacks.length-1){
+      ctx.strokeStyle="rgba(0,0,0,.12)";
+      ctx.beginPath(); ctx.moveTo(44,y-8); ctx.lineTo(CARD_W-44,y-8); ctx.stroke();
+    }
+  });
+
+  // --- footer stats ---
+  const fy = CARD_H-92;
+  ctx.strokeStyle="rgba(0,0,0,.2)"; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(44,fy-16); ctx.lineTo(CARD_W-44,fy-16); ctx.stroke();
+  ctx.font="700 10.5px "+CARD_FONT; ctx.fillStyle="rgba(0,0,0,.5)";
+  ctx.fillText("weakness", 46, fy); ctx.fillText("resistance", 188, fy); ctx.fillText("retreat", 336, fy);
+  energyPip(ctx, 60, fy+20, 12, WEAK[mon.type]);
+  ctx.font="700 13px "+CARD_FONT; ctx.fillStyle="#171520"; ctx.fillText("×2", 76, fy+25);
+  if(RESIST[mon.type]){ energyPip(ctx, 202, fy+20, 12, RESIST[mon.type]);
+    ctx.fillText("−30", 218, fy+25); }
+  else { ctx.fillStyle="rgba(0,0,0,.35)"; ctx.fillText("—", 196, fy+25); }
+  for(let i=0;i<st.retreat;i++) energyPip(ctx, 348+i*26, fy+20, 12, "C");
+
+  // --- flavour + number ---
+  ctx.font="italic 12px "+CARD_FONT; ctx.fillStyle="rgba(0,0,0,.55)";
+  const flav = FLAVOR[mon.type];
+  ctx.fillText(flav.length>66?flav.slice(0,64)+"…":flav, 46, CARD_H-38);
+  ctx.font="700 11px "+CARD_FONT; ctx.fillStyle="rgba(0,0,0,.55)";
+  ctx.textAlign="right";
+  ctx.fillText(`${String(NUMBERS[mon.name]).padStart(3,"0")}/151`, CARD_W-64, CARD_H-37);
+  ctx.textAlign="left";
+  raritySymbol(ctx, CARD_W-50, CARD_H-42, 8, mon.rarity, card.holo!=="none");
+
+  // holo stamp — sits on the info strip, not over the artwork
+  if(card.holo==="rare"){
+    ctx.save();
+    ctx.textAlign="right";
+    ctx.fillStyle="rgba(0,0,0,.5)"; ctx.font="800 11px "+CARD_FONT;
+    ctx.fillText("HOLO RARE", CARD_W-46, artY+artH+26);
+    ctx.restore();
+    ctx.textAlign="left";
+  }
+
+  /* ---------- holo mask ---------- */
+  const m = document.createElement("canvas"); m.width=CARD_W>>1; m.height=CARD_H>>1;
+  const mc = m.getContext("2d"); const s=0.5;
+  mc.fillStyle="#000"; mc.fillRect(0,0,m.width,m.height);
+  if(card.holo==="rare"){
+    mc.fillStyle="#fff"; mc.fillRect(artX*s, artY*s, artW*s, artH*s);
+  } else if(card.holo==="reverse"){
+    mc.save(); rr(mc,P*s,P*s,(CARD_W-P*2)*s,(CARD_H-P*2)*s,(R-9)*s); mc.fillStyle="#fff"; mc.fill();
+    mc.globalCompositeOperation="destination-out";
+    mc.fillRect(artX*s, artY*s, artW*s, artH*s);
+    mc.restore();
+  }
+  return {front:c, mask:m};
+}
+
+let BACK_CANVAS = null;
+function buildCardBack(){
+  if(BACK_CANVAS) return BACK_CANVAS;
+  const c=document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
+  const ctx=c.getContext("2d"); const R=30;
+  rr(ctx,0,0,CARD_W,CARD_H,R);
+  const g=ctx.createLinearGradient(0,0,CARD_W,CARD_H);
+  g.addColorStop(0,"#2b2470"); g.addColorStop(.5,"#171043"); g.addColorStop(1,"#3a1a5e");
+  ctx.fillStyle=g; ctx.fill();
+  ctx.save(); rr(ctx,0,0,CARD_W,CARD_H,R); ctx.clip();
+
+  // guilloche rings
+  ctx.globalAlpha=.35; ctx.strokeStyle="#6ee7dc"; ctx.lineWidth=1.2;
+  for(let i=0;i<26;i++){ ctx.beginPath();
+    ctx.ellipse(CARD_W/2, CARD_H/2, 40+i*13, 60+i*17, 0,0,7); ctx.stroke(); }
+  ctx.globalAlpha=.2; ctx.strokeStyle="#ff7fc0";
+  for(let i=0;i<18;i++){ ctx.beginPath();
+    ctx.ellipse(CARD_W/2, CARD_H/2, 30+i*19, 44+i*12, Math.PI/4,0,7); ctx.stroke(); }
+  ctx.globalAlpha=1;
+
+  // border frame
+  ctx.strokeStyle="#f3efe4"; ctx.lineWidth=16;
+  rr(ctx,20,20,CARD_W-40,CARD_H-40,20); ctx.stroke();
+  ctx.strokeStyle="rgba(110,231,220,.7)"; ctx.lineWidth=3;
+  rr(ctx,38,38,CARD_W-76,CARD_H-76,12); ctx.stroke();
+
+  // emblem
+  const cx=CARD_W/2, cy=CARD_H/2;
+  const eg=ctx.createRadialGradient(cx-30,cy-40,10,cx,cy,180);
+  eg.addColorStop(0,"#8ef7ea"); eg.addColorStop(.55,"#3fc9dd"); eg.addColorStop(1,"#7a2fb0");
+  ctx.fillStyle=eg;
+  ctx.beginPath();
+  for(let i=0;i<12;i++){ const a=-Math.PI/2+i*Math.PI/6; const rad=i%2?78:150;
+    ctx.lineTo(cx+Math.cos(a)*rad, cy+Math.sin(a)*rad); }
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=5; ctx.stroke();
+  ctx.fillStyle="#16103a"; ctx.beginPath(); ctx.arc(cx,cy,56,0,7); ctx.fill();
+  ctx.strokeStyle="#f3efe4"; ctx.lineWidth=6; ctx.stroke();
+  ctx.fillStyle="#f3efe4"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font="800 44px "+CARD_FONT; ctx.fillText("K", cx, cy+3);
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+
+  ctx.restore();
+  BACK_CANVAS=c; return c;
+}
+
+/* ============================================================
+   5. Pack artwork
+   ============================================================ */
+const PACK_W=512, PACK_H=768, TEAR_AT=0.895; // fraction of height where body ends
+function buildPackArt(){
+  const c=document.createElement("canvas"); c.width=PACK_W; c.height=PACK_H;
+  const ctx=c.getContext("2d");
+  const g=ctx.createLinearGradient(0,0,PACK_W,PACK_H);
+  g.addColorStop(0,"#12b6c9"); g.addColorStop(.35,"#1f6fd0"); g.addColorStop(.62,"#7a2bd6"); g.addColorStop(1,"#e0369a");
+  ctx.fillStyle=g; ctx.fillRect(0,0,PACK_W,PACK_H);
+
+  // foil streaks
+  for(let i=0;i<26;i++){
+    ctx.globalAlpha=.08+Math.random()*.12;
+    ctx.fillStyle= i%2 ? "#fff" : "#ffe9a8";
+    const w=8+Math.random()*40;
+    ctx.save(); ctx.translate(Math.random()*PACK_W, 0); ctx.rotate(-0.32);
+    ctx.fillRect(-w/2,-200,w,PACK_H+400); ctx.restore();
+  }
+  ctx.globalAlpha=1;
+
+  // sunburst behind logo
+  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.36); ctx.globalAlpha=.22; ctx.fillStyle="#fff";
+  for(let i=0;i<16;i++){ ctx.save(); ctx.rotate(i*Math.PI/8);
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-16,-600); ctx.lineTo(16,-600); ctx.closePath(); ctx.fill(); ctx.restore(); }
+  ctx.restore();
+
+  // logo block
+  ctx.textAlign="center";
+  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.33);
+  ctx.rotate(-0.045);
+  ctx.font="900 76px "+CARD_FONT;
+  ctx.lineJoin="round"; ctx.lineWidth=18; ctx.strokeStyle="#16103a"; ctx.strokeText("KANTO",0,0);
+  const lg=ctx.createLinearGradient(0,-56,0,10);
+  lg.addColorStop(0,"#fff8d8"); lg.addColorStop(.5,"#ffd15c"); lg.addColorStop(1,"#f09a2a");
+  ctx.fillStyle=lg; ctx.fillText("KANTO",0,0);
+  ctx.font="900 34px "+CARD_FONT; ctx.lineWidth=12;
+  ctx.strokeStyle="#16103a"; ctx.strokeText("SERIES",0,44);
+  ctx.fillStyle="#f3efe4"; ctx.fillText("SERIES",0,44);
+  ctx.restore();
+
+  // holographic diamond
+  ctx.save(); ctx.translate(PACK_W/2, PACK_H*0.62);
+  const dg=ctx.createLinearGradient(-120,-120,120,120);
+  dg.addColorStop(0,"#9ef9ee"); dg.addColorStop(.4,"#5ac8f5"); dg.addColorStop(.7,"#c56cf0"); dg.addColorStop(1,"#ffd15c");
+  ctx.fillStyle=dg;
+  ctx.beginPath(); ctx.moveTo(0,-120); ctx.lineTo(96,0); ctx.lineTo(0,120); ctx.lineTo(-96,0); ctx.closePath();
+  ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=6; ctx.stroke();
+  ctx.fillStyle="rgba(22,16,58,.85)"; ctx.font="800 30px "+CARD_FONT;
+  ctx.fillText("10", 0, -2); ctx.font="700 14px "+CARD_FONT; ctx.fillText("CARDS", 0, 26);
+  ctx.restore();
+
+  // bottom bar
+  ctx.fillStyle="rgba(20,14,48,.55)"; ctx.fillRect(0, PACK_H*0.76, PACK_W, 52);
+  ctx.fillStyle="#eef0ff"; ctx.font="700 17px "+CARD_FONT;
+  ctx.fillText("1 GUARANTEED RARE · 1 REVERSE HOLO", PACK_W/2, PACK_H*0.76+34);
+
+  // tear strip zone
+  const ty = PACK_H*TEAR_AT;
+  ctx.fillStyle="rgba(255,255,255,.14)"; ctx.fillRect(0, ty, PACK_W, PACK_H-ty);
+  ctx.strokeStyle="rgba(255,255,255,.75)"; ctx.lineWidth=3; ctx.setLineDash([12,10]);
+  ctx.beginPath(); ctx.moveTo(0,ty+4); ctx.lineTo(PACK_W,ty+4); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle="rgba(255,255,255,.9)"; ctx.font="700 15px "+CARD_FONT;
+  ctx.fillText("TEAR HERE  ▸▸▸", PACK_W/2, ty+56);
+  ctx.textAlign="left";
+  return c;
+}
+function cropCanvas(src, sy, sh){
+  const c=document.createElement("canvas"); c.width=src.width; c.height=Math.round(sh);
+  c.getContext("2d").drawImage(src, 0, sy, src.width, sh, 0, 0, src.width, sh);
+  return c;
+}
+function buildPackBack(){
+  const c=document.createElement("canvas"); c.width=PACK_W; c.height=PACK_H;
+  const ctx=c.getContext("2d");
+  const g=ctx.createLinearGradient(0,0,PACK_W,PACK_H);
+  g.addColorStop(0,"#1b1a6e"); g.addColorStop(.5,"#2f1360"); g.addColorStop(1,"#0e2a55");
+  ctx.fillStyle=g; ctx.fillRect(0,0,PACK_W,PACK_H);
+  ctx.globalAlpha=.18; ctx.fillStyle="#fff";
+  for(let y=0;y<PACK_H;y+=44) for(let x=(y/44)%2?22:0;x<PACK_W;x+=44){
+    ctx.beginPath(); ctx.moveTo(x+22,y); ctx.lineTo(x+40,y+22); ctx.lineTo(x+22,y+44); ctx.lineTo(x+4,y+22);
+    ctx.closePath(); ctx.fill(); }
+  ctx.globalAlpha=1;
+  ctx.save(); ctx.translate(PACK_W/2, PACK_H/2);
+  const dg=ctx.createLinearGradient(-110,-110,110,110);
+  dg.addColorStop(0,"#8ef7ea"); dg.addColorStop(.6,"#5a7cf5"); dg.addColorStop(1,"#c56cf0");
+  ctx.fillStyle=dg;
+  ctx.beginPath(); ctx.moveTo(0,-110); ctx.lineTo(88,0); ctx.lineTo(0,110); ctx.lineTo(-88,0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="rgba(255,255,255,.8)"; ctx.lineWidth=6; ctx.stroke();
+  ctx.restore();
+  return c;
+}
+
+/* ============================================================
+   6. Pack generation logic
+   ============================================================ */
+function shuffle(a,rng){ for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1)); const t=a[i];a[i]=a[j];a[j]=t;} return a; }
+
+function generatePack(){
+  const rng = Math.random;
+  const used = new Set();
+  function draw(tier){
+    let m, guard=0;
+    do { m = POOL[tier][Math.floor(rng()*POOL[tier].length)]; guard++; }
+    while(used.has(m.name) && guard<60);
+    used.add(m.name);
+    return m;
+  }
+  const cards=[];
+  for(let i=0;i<5;i++) cards.push({mon:draw("C"), holo:"none"});
+  for(let i=0;i<3;i++) cards.push({mon:draw("U"), holo:"none"});
+  // reverse holo slot: any common or uncommon
+  cards.push({mon: draw(rng()<0.6?"C":"U"), holo:"reverse"});
+  // rare slot, 1 in 3 is a holo
+  cards.push({mon: draw("R"), holo: rng()<0.34 ? "rare" : "none"});
+  cards.forEach(c=>{ c.stats = statsFor(c.mon); });
+
+  // Randomize the final 10-card order so the sprite images appear
+  // in a different order every pack while keeping the same rarity odds.
+  shuffle(cards, rng);
+  return cards;
+}
+
+/* ============================================================
+   7. Audio
+   ============================================================ */
+const Audio2 = (function(){
+  let ctx=null, muted=false;
+  function ac(){ if(!ctx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); } 
+    if(ctx && ctx.state==="suspended") ctx.resume(); return ctx; }
+  function env(node,t0,a,d,peak){ const g=node.gain; g.setValueAtTime(0.0001,t0);
+    g.exponentialRampToValueAtTime(peak,t0+a); g.exponentialRampToValueAtTime(0.0001,t0+a+d); }
+  function noise(dur,freq,q,vol){
+    const c=ac(); if(!c||muted) return;
+    const n=Math.floor(c.sampleRate*dur);
+    const buf=c.createBuffer(1,n,c.sampleRate); const d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const src=c.createBufferSource(); src.buffer=buf;
+    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq; bp.Q.value=q;
+    const g=c.createGain(); g.gain.value=vol;
+    src.connect(bp); bp.connect(g); g.connect(c.destination); src.start();
+  }
+  function tone(freq,t,dur,type,vol){
+    const c=ac(); if(!c||muted) return;
+    const o=c.createOscillator(); const g=c.createGain();
+    o.type=type||"triangle"; o.frequency.value=freq;
+    o.connect(g); g.connect(c.destination);
+    const t0=c.currentTime+t; env(g,t0,0.012,dur,vol||0.16);
+    o.start(t0); o.stop(t0+dur+0.06);
+  }
+  return {
+    unlock(){ ac(); },
+    setMuted(v){ muted=v; },
+    isMuted(){ return muted; },
+    rip(intensity){ noise(0.09, 1400+Math.random()*2200, 1.4, 0.13*intensity); },
+    bigRip(){ noise(0.55, 1100, 0.8, 0.3); noise(0.4, 2600, 1.2, 0.18); },
+    flip(){ noise(0.06, 3200, 2.0, 0.10); tone(520,0,0.05,"square",0.05); },
+    whoosh(){ noise(0.22, 700, 0.7, 0.10); },
+    tap(){ tone(760,0,0.05,"square",0.05); },
+    holo(kind){
+      const base = kind==="rare" ? [523.25,659.25,783.99,1046.5,1318.5] : [659.25,830.6,987.77,1318.5];
+      base.forEach((f,i)=> tone(f, i*0.075, 0.5, "triangle", 0.12));
+      if(kind==="rare"){ tone(1567.98, 0.42, 0.9, "sine", 0.1); tone(261.63, 0, 0.8, "sine", 0.08); }
+    }
+  };
+})();
+
+/* ============================================================
+   8. Confetti / sparkle overlay
+   ============================================================ */
+const FX = (function(){
+  const cv=document.getElementById("fx"), ctx=cv.getContext("2d");
+  let parts=[], dpr=1, W=0,H=0, running=false;
+  function resize(){ dpr=Math.min(window.devicePixelRatio||1,2);
+    W=window.innerWidth; H=window.innerHeight;
+    cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px"; cv.style.height=H+"px";
+    ctx.setTransform(dpr,0,0,dpr,0,0); }
+  window.addEventListener("resize",resize); resize();
+  function burst(kind){
+    const colors = kind==="rare"
+      ? ["#ffd15c","#ffe9a8","#ff9f43","#fff","#ffb8e0","#42e8d8"]
+      : ["#42e8d8","#8ef7ea","#ff4fa3","#fff","#a78bfa"];
+    const n = kind==="rare" ? 120 : 80;
+    const cx=W/2, cy=H*0.46;
+    for(let i=0;i<n;i++){
+      const a=Math.random()*Math.PI*2, sp=2.5+Math.random()*9.5;
+      parts.push({
+        x:cx+(Math.random()-.5)*70, y:cy+(Math.random()-.5)*70,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 3,
+        w:4+Math.random()*8, h:5+Math.random()*11,
+        rot:Math.random()*6.3, vr:(Math.random()-.5)*0.4,
+        c:colors[(Math.random()*colors.length)|0], life:1,
+        fade:0.006+Math.random()*0.008, shape: Math.random()<0.25?"c":"r"
+      });
+    }
+    if(!running){ running=true; requestAnimationFrame(tick); }
+  }
+  function tick(){
+    ctx.clearRect(0,0,W,H);
+    for(let i=parts.length-1;i>=0;i--){
+      const p=parts[i];
+      p.vy += 0.22; p.vx *= 0.992; p.vy *= 0.995;
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= p.fade;
+      if(p.life<=0 || p.y>H+60){ parts.splice(i,1); continue; }
+      ctx.save(); ctx.globalAlpha=Math.max(0,Math.min(1,p.life));
+      ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.c;
+      if(p.shape==="c"){ ctx.beginPath(); ctx.arc(0,0,p.w*0.5,0,7); ctx.fill(); }
+      else ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      ctx.restore();
+    }
+    if(parts.length){ requestAnimationFrame(tick); } else { running=false; ctx.clearRect(0,0,W,H); }
+  }
+  return {burst};
+})();
+
+/* ============================================================
+   9. Three.js scene
+   ============================================================ */
+const stage = document.getElementById("stage");
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+camera.position.set(0,0,7);
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+stage.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(2.5,4,5); scene.add(key);
+const rim = new THREE.DirectionalLight(0xff7fd0, 0.45); rim.position.set(-3,-1,2); scene.add(rim);
+
+const CARD_MESH_W = 1.72, CARD_MESH_H = CARD_MESH_W*(CARD_H/CARD_W), CARD_MESH_D = 0.014;
+
+function fitCamera(){
+  const w = window.innerWidth, h = window.innerHeight;
+  const aspect = w/h;
+  camera.aspect = aspect;
+  const vfov = camera.fov*Math.PI/180;
+  const needH = CARD_MESH_H*0.62;               // half-height with margin
+  const needW = CARD_MESH_W*0.66;               // half-width with margin
+  const dH = needH/Math.tan(vfov/2);
+  const dW = needW/(Math.tan(vfov/2)*aspect);
+  camera.position.z = Math.max(dH,dW) + 0.85;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h,true);
+  renderer.domElement.style.width = w+"px";
+  renderer.domElement.style.height = h+"px";
+}
+window.addEventListener("resize", fitCamera);
+fitCamera();
+
+/* ---------- holo shader ---------- */
+const HOLO_VS = `
+varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+void main(){
+  vUv = uv;
+  vN = normalize(normalMatrix * normal);
+  vec4 mv = modelViewMatrix * vec4(position,1.0);
+  vP = mv.xyz;
+  gl_Position = projectionMatrix * mv;
+}`;
+const HOLO_FS = `
+uniform sampler2D uMap;
+uniform sampler2D uMask;
+uniform float uTime;
+uniform float uHolo;
+uniform float uGold;
+uniform vec2  uTilt;
+varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+
+void main(){
+  vec4 base = texture2D(uMap, vUv);
+  vec3 col = base.rgb;
+  vec3 N = normalize(vN);
+  vec3 V = normalize(-vP);
+  float facing = clamp(dot(N,V),0.0,1.0);
+
+  // gentle sheen on every card so it reads as a physical card
+  col += pow(1.0-facing, 3.0) * 0.13;
+
+  float m = texture2D(uMask, vUv).r * uHolo;
+  if(m > 0.003){
+    vec3 R = reflect(-V, N);
+    float px = R.x + uTilt.x, py = R.y + uTilt.y;
+    float p = vUv.x*2.4 + vUv.y*4.2 + px*5.5 + py*4.0 + uTime*0.18;
+    vec3 rb = 0.5 + 0.5*cos(6.28318*(p + vec3(0.0,0.33,0.67)));
+    rb = mix(rb, mix(rb, vec3(1.0,0.78,0.32), 0.65), uGold);
+
+    float band = 0.5 + 0.5*sin(6.28318*(vUv.y*1.8 - px*2.6 + uTime*0.12));
+    float strength = 0.40 + 0.60*smoothstep(0.1,1.0,band);
+
+    vec2 g = floor(vUv*vec2(86.0,120.0));
+    float rv = h21(g);
+    float twinkle = step(0.90, fract(rv*7.13 + px*0.55 + py*0.42 + uTime*0.06));
+    float sparkle = twinkle * smoothstep(0.55,1.0,band);
+
+    col = mix(col, col*0.55 + rb*0.85, m*strength*0.78);
+    col += rb*sparkle*m*0.85;
+    col += m*pow(1.0-facing,2.0)*0.18;
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function makeCardMesh(card){
+  const faces = buildCardFace(card);
+  card.frontCanvas = faces.front;
+  const tex = new THREE.CanvasTexture(faces.front);
+  tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  const mask = new THREE.CanvasTexture(faces.mask);
+  mask.minFilter = THREE.LinearFilter; mask.generateMipmaps = false;
+
+  const frontMat = new THREE.ShaderMaterial({
+    uniforms:{
+      uMap:{value:tex}, uMask:{value:mask},
+      uTime:{value:0}, uHolo:{value:0}, uGold:{value: card.holo==="rare"?1:0},
+      uTilt:{value:new THREE.Vector2(0,0)}
+    },
+    vertexShader:HOLO_VS, fragmentShader:HOLO_FS
+  });
+  const backTex = new THREE.CanvasTexture(buildCardBack());
+  backTex.minFilter = THREE.LinearFilter; backTex.generateMipmaps = false;
+  const backMat = new THREE.MeshBasicMaterial({map:backTex});
+  const edgeMat = new THREE.MeshBasicMaterial({color:0xf2efe6});
+
+  const geo = new THREE.BoxGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D);
+  const mesh = new THREE.Mesh(geo, [edgeMat,edgeMat,edgeMat,edgeMat,frontMat,backMat]);
+  const pivot = new THREE.Group();
+  pivot.add(mesh);
+  card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
+  return pivot;
+}
+
+/* ---------- pack meshes ---------- */
+// The wrapper has to be genuinely bigger than what it holds: wider and taller
+// than a card (1.72 x 2.405) with margin, and deep enough to stack ten of them
+// without them intersecting each other.
+const PACK = {
+  w: 1.90, h: 2.85, d: 0.34,
+  topH: 0.30
+};
+// hinge line for the tear flap: the rear face, so it peels away from the body
+const TOP_PIVOT_Z = -PACK.d/2;
+let packGroup=null, packBody=null, packTopPivot=null, packBodyJag=null, packTopJag=null;
+
+function buildPackMeshes(){
+  const art = buildPackArt();
+  const backArt = buildPackBack();
+  const bodyH = PACK.h - PACK.topH;
+  const splitPx = Math.round(PACK_H*TEAR_AT);
+  const bodyCanvas = cropCanvas(art, 0, splitPx);
+  const topCanvas  = cropCanvas(art, splitPx, PACK_H-splitPx);
+  const backBody   = cropCanvas(backArt, 0, splitPx);
+  const backTop    = cropCanvas(backArt, splitPx, PACK_H-splitPx);
+
+  function mat(canvas){
+    const t=new THREE.CanvasTexture(canvas);
+    t.minFilter=THREE.LinearFilter; t.generateMipmaps=false;
+    return new THREE.MeshPhongMaterial({map:t, shininess:78, specular:0x8899bb});
+  }
+  const foil = new THREE.MeshPhongMaterial({color:0x9fb7d8, shininess:110, specular:0xffffff});
+  const inside = new THREE.MeshPhongMaterial({color:0x2b2f45, shininess:10});
+
+  packGroup = new THREE.Group();
+
+  // The +Y face is left undrawn: the wrapper is open at the top once torn, and
+  // a solid lid would be sliced through by every card on its way out. The
+  // camera sits below the rim so nothing shows through the opening.
+  const openTop = new THREE.MeshBasicMaterial();
+  openTop.visible = false;
+  const bodyGeo = new THREE.BoxGeometry(PACK.w, bodyH, PACK.d);
+  packBody = new THREE.Mesh(bodyGeo, [foil,foil,openTop,foil, mat(bodyCanvas), mat(backBody)]);
+  packBody.position.y = -PACK.topH/2;
+  packGroup.add(packBody);
+
+  // Jagged torn edge. The teeth sit just proud of the box they belong to —
+  // a hair thinner in depth and with only a sliver of overlap — so their
+  // faces are never coplanar with the wrapper's, which would z-fight.
+  const teeth = 13, amp = 0.055, jagD = 0.012;
+  function zig(up){
+    const s = new THREE.Shape();
+    const w = PACK.w, base = up ? -0.006 : 0.006;
+    s.moveTo(-w/2, base);
+    s.lineTo(-w/2, 0);
+    for(let i=0;i<teeth;i++){
+      const x1=-w/2+((i+0.5)/teeth)*w, x2=-w/2+((i+1)/teeth)*w;
+      s.lineTo(x1, up?amp:-amp); s.lineTo(x2, 0);
+    }
+    s.lineTo(w/2, base);
+    s.closePath();
+    const g = new THREE.ExtrudeGeometry(s,{depth:jagD, bevelEnabled:false});
+    g.translate(0,0,-jagD/2);
+    return g;
+  }
+  // A pack is two sheets of foil. Extruding the teeth through the whole depth
+  // made a solid block across the opening that every card cut through; two thin
+  // strips at the front and back faces let the cards pass between them.
+  function makeJag(up){
+    const g = new THREE.Group();
+    const front = new THREE.Mesh(zig(up), foil);
+    front.position.z =  PACK.d/2 - jagD/2;
+    const back  = new THREE.Mesh(zig(up), foil);
+    back.position.z  = -PACK.d/2 + jagD/2;
+    g.add(front); g.add(back);
+    return g;
+  }
+  const tearY = bodyH - PACK.h/2;
+  packBodyJag = makeJag(true);
+  packBodyJag.position.y = tearY;
+  packBodyJag.visible = false;   // sealed pack shows no torn edge yet
+  packGroup.add(packBodyJag);
+
+  // The flap hinges on its REAR edge, not on the centre of the tear line.
+  // Hinging at z=0 swings the flap's whole rear half down into the pack body
+  // as it peels — 0.137 of penetration at full rotation.
+  packTopPivot = new THREE.Group();
+  packTopPivot.position.set(0, tearY, TOP_PIVOT_Z);
+  const topGeo = new THREE.BoxGeometry(PACK.w, PACK.topH, PACK.d);
+  const topMesh = new THREE.Mesh(topGeo, [foil,foil,foil,inside, mat(topCanvas), mat(backTop)]);
+  topMesh.position.set(0, PACK.topH/2, PACK.d/2);
+  packTopPivot.add(topMesh);
+  packTopJag = makeJag(false);
+  packTopJag.position.z = PACK.d/2;
+  packTopJag.visible = false;
+  packTopPivot.add(packTopJag);
+  packGroup.add(packTopPivot);
+
+  packGroup.position.y = 0.05;
+  scene.add(packGroup);
+}
+
+/* ============================================================
+   10. Tween helper
+   ============================================================ */
+const tweens=[];
+function tween(dur, onUpdate, ease, onEnd, delay){
+  const tw={t:-(delay||0), dur, onUpdate, ease:ease||easeInOut, onEnd, done:false};
+  tweens.push(tw); return tw;
+}
+function stepTweens(dt){
+  for(let i=tweens.length-1;i>=0;i--){
+    const tw=tweens[i]; tw.t+=dt;
+    if(tw.t<0) continue;
+    const k=clamp(tw.t/tw.dur,0,1);
+    tw.onUpdate(tw.ease(k), k);
+    if(k>=1){ tweens.splice(i,1); if(tw.onEnd) tw.onEnd(); }
+  }
+}
+
+/* ============================================================
+   11. Game state
+   ============================================================ */
+const UI = {
+  hint: document.getElementById("hint"),
+  action: document.getElementById("action"),
+  meter: document.getElementById("meter"),
+  meterFill: document.querySelector("#meter i"),
+  pips: document.getElementById("pips"),
+  banner: document.getElementById("banner"),
+  bannerBig: document.getElementById("bannerBig"),
+  bannerSub: document.getElementById("bannerSub"),
+  summary: document.getElementById("summary"),
+  grid: document.getElementById("grid"),
+  sumLede: document.getElementById("sumLede"),
+  again: document.getElementById("again"),
+  sound: document.getElementById("sound")
+};
+
+let state = "idle";       // idle | tearing | dealing | viewing | done
+let cards = [];
+let index = 0;
+let tearProgress = 0;
+let packsOpened = 0;
+
+function setHint(html){ UI.hint.innerHTML = html; }
+
+function buildPips(){
+  UI.pips.innerHTML="";
+  cards.forEach(()=>{ const d=document.createElement("div"); d.className="pip"; UI.pips.appendChild(d); });
+}
+function updatePips(){
+  const nodes = UI.pips.children;
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i]; n.className="pip";
+    if(cards[i].revealed){ n.classList.add(cards[i].holo!=="none" ? "hit":"done"); }
+    if(i===index && state==="viewing") n.classList.add("now");
+  }
+}
+
+/* ---------- start a new pack ---------- */
+function newPack(){
+  // clear old
+  cards.forEach(c=>{ if(c.pivot) scene.remove(c.pivot); });
+  cards = generatePack();
+  index=0; tearProgress=0; tweens.length=0;
+  if(packGroup){ scene.remove(packGroup); packGroup=null; }
+  buildPackMeshes();
+  packGroup.scale.setScalar(0.001);
+  tween(0.65, k=>{ packGroup.scale.setScalar(lerp(0.001,1,k)); }, back);
+  state="idle";
+  UI.summary.classList.remove("on");
+  UI.pips.innerHTML="";
+  UI.meter.style.opacity="0";
+  UI.action.style.display="none";
+  setHint("Drag sideways across the <b>tear strip</b> at the top of the pack");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>{
+    if(state==="idle" && tearProgress===0) UI.action.style.display="block";
+  }, 7000);
+}
+let idleTimer = null;
+
+/* ---------- tearing ---------- */
+function applyTear(){
+  const p = easeOut(tearProgress);
+  packTopPivot.rotation.x = -p*1.15;
+  packTopPivot.position.z = TOP_PIVOT_Z + p*0.06;
+  if(packBodyJag) packBodyJag.visible = tearProgress > 0.02;
+  if(packTopJag)  packTopJag.visible  = tearProgress > 0.02;
+  UI.meterFill.style.width = (tearProgress*100)+"%";
+}
+
+function finishTear(){
+  state="dealing";
+  UI.meter.style.opacity="0";
+  Audio2.bigRip();
+  if(navigator.vibrate) navigator.vibrate([18,30,40]);
+  setHint("");
+
+  // whatever angle the float left behind, drive it to zero before cards show
+  const r0x = packGroup.rotation.x, r0y = packGroup.rotation.y;
+  tween(0.3, k=>{
+    packGroup.rotation.x = lerp(r0x, 0, k);
+    packGroup.rotation.y = lerp(r0y, 0, k);
+  }, easeOut);
+
+  const startRot = packTopPivot.rotation.x;
+  tween(0.45, k=>{
+    packTopPivot.rotation.x = startRot - k*2.2;
+    packTopPivot.position.y = lerp(PACK.h-PACK.topH-PACK.h/2, PACK.h*1.25, k);
+    packTopPivot.position.x = k*2.2;
+    packTopPivot.rotation.z = k*1.6;
+    packTopPivot.scale.setScalar(1-k*0.3);
+  }, easeOut, ()=>{ packTopPivot.visible=false; });
+
+  dealCards();
+
+  // The wrapper is pulled down first. That gives the cards real upward
+  // travel out of the opening instead of hopping up and falling back into
+  // the same spot the pack was already occupying.
+  tween(0.34, k=>{
+    packGroup.position.y = lerp(0.05, PACK_DROP_Y, k);
+    packBody.scale.set(1, 1-k*0.03, 1);
+  }, easeInOut);
+  tween(0.55, k=>{
+    packGroup.position.y = PACK_DROP_Y - k*4.9;
+    packGroup.scale.setScalar(lerp(1,0.94,k));
+  }, easeInOut, ()=>{ scene.remove(packGroup); packGroup=null; }, 0.80);
+}
+
+/* ---------- dealing ---------- */
+// The active card sits on the fitted plane at z=0. Everything still waiting
+// sits far enough back that a full tilt or flip can never sweep into it:
+// half the card diagonal at max rotation is ~0.65, so the deck starts at -1.1.
+// Where the wrapper is pulled down to before the cards are drawn out, and
+// the spot inside it where the cards wait. A full-size card (1.72 x 2.405)
+// now clears the opened interior (1.90 x 2.55) on every side, so the cards
+// need no shrinking to stay concealed.
+const PACK_DROP_Y = -0.85;
+const CARD_HIDDEN_Y = PACK_DROP_Y - 0.15;
+
+// World-space room between the top of a settled card and the top of frame.
+// Depends on the camera fit, so it shrinks on wide viewports instead of
+// throwing cards past the edge.
+function headroom(){
+  const halfVisible = camera.position.z * Math.tan((camera.fov*Math.PI/180)/2);
+  return Math.max(0.18, halfVisible - CARD_MESH_H/2 - 0.08);
+}
+
+function stackPos(i){
+  const off = i - index;
+  if(off <= 0) return {x:0, y:0, z:0};
+  return { x:0, y:-0.014*off, z:-1.1 - 0.032*off };
+}
+
+function dealCards(){
+  if(!cards.length){ cards = generatePack(); }
+
+  // Cards wait at full size inside the lowered wrapper, stacked through its
+  // depth so none of them intersect each other, and all of them sit behind
+  // its front face — that occlusion is what reads as "inside the pack".
+  cards.forEach((card,i)=>{
+    const pivot = makeCardMesh(card);
+    card.revealed=false; card.flipped=false;
+    card.tiltSeed = (Math.random()-0.5);
+    card.startZ = 0.077 - i*0.017;
+    pivot.position.set(0, CARD_HIDDEN_Y, card.startZ);
+    pivot.rotation.set(0, Math.PI, 0);
+    pivot.scale.setScalar(1);
+    pivot.visible = false;
+    scene.add(pivot);
+  });
+  buildPips();
+
+  const n = cards.length;
+  const bump = Math.min(0.12, headroom()*0.4);
+
+  cards.forEach((card,i)=>{
+    const to = stackPos(i);
+    tween(0.7, k=>{
+      card.pivot.visible = true;
+      const e = easeOut(k);
+      // A straight vertical slide. No arc, no sway, no tumble: a card being
+      // drawn out of a wrapper doesn't swing sideways, and any roll while it
+      // still overlaps the pack throws its corners outside the wrapper.
+      card.pivot.position.x = 0;
+      card.pivot.position.y = lerp(CARD_HIDDEN_Y, to.y, e) + Math.sin(k*Math.PI)*bump;
+      // depth is held until the wrapper has fallen away — see the settle tween
+      // below. Moving back toward the deck during the rise drove the card out
+      // through the rear face of the pack.
+      card.pivot.position.z = card.startZ;
+      card.pivot.rotation.x = 0;
+      card.pivot.rotation.y = Math.PI;
+      // a whisper of roll, only once it is fully clear of the wrapper
+      card.pivot.rotation.z = Math.sin(clamp((k-0.72)/0.28,0,1)*Math.PI) * card.tiltSeed * 0.05;
+      card.pivot.scale.setScalar(1);
+    }, easeInOut, null, 0.50 + (n-1-i)*0.03);
+
+    // The card's resting height is below the wrapper's rim, so it never rises
+    // clear of the pack — the pack drops away instead. Only once it has can a
+    // card move back to its deck depth without cutting through the foil.
+    tween(0.45, k=>{
+      card.pivot.position.z = lerp(card.startZ, to.z, k);
+    }, easeInOut, ()=>{
+      if(i===0){
+        card.pivot.rotation.z = 0;
+        state="viewing"; index=0; updatePips();
+        setHint("<b>Tap the card</b> to flip it");
+      }
+    }, 1.05);
+  });
+
+  cards.forEach((c,i)=>{ c.pivot.renderOrder = n-i; });
+  Audio2.whoosh();
+}
+
+/* ---------- flip / advance ---------- */
+let tilt = {x:0,y:0,tx:0,ty:0};
+
+function flipCurrent(){
+  const card = cards[index];
+  if(!card || card.flipped) return;
+  card.flipped=true;
+  Audio2.flip();
+  if(navigator.vibrate) navigator.vibrate(12);
+  let celebrated=false;
+  tween(0.62, (k)=>{
+    card.pivot.rotation.y = lerp(Math.PI, 0, k);
+    card.pivot.position.z = Math.sin(k*Math.PI)*0.5;
+    card.pivot.scale.setScalar(1 + Math.sin(k*Math.PI)*0.07);
+    card.frontMat.uniforms.uHolo.value = card.holo==="none" ? 0 : clamp((k-0.45)/0.45,0,1);
+    if(!celebrated && k>0.55 && card.holo!=="none"){ celebrated=true; celebrate(card); }
+  }, easeInOut, ()=>{
+    card.revealed=true;
+    card.frontMat.uniforms.uHolo.value = card.holo==="none"?0:1;
+    Motion.recentre();
+    updatePips();
+    setHint(index===cards.length-1
+      ? "<b>Drag to tilt</b> · tap to see your pull"
+      : "<b>Drag to tilt</b> · tap for the next card");
+  });
+  updatePips();
+}
+
+function celebrate(card){
+  const rare = card.holo==="rare";
+  FX.burst(rare?"rare":"reverse");
+  Audio2.holo(card.holo);
+  if(navigator.vibrate) navigator.vibrate(rare?[30,40,30,40,80]:[20,40,40]);
+  UI.bannerBig.textContent = rare ? "HOLO RARE" : "REVERSE HOLO";
+  UI.bannerSub.textContent = card.mon.name.toUpperCase();
+  UI.banner.classList.add("on");
+  setTimeout(()=>UI.banner.classList.remove("on"), rare?2100:1500);
+}
+
+function nextCard(){
+  const card = cards[index];
+  if(!card) return;
+  Audio2.whoosh();
+  tilt.tx=0; tilt.ty=0;
+  const c = card;
+  const dir = (index%2)?-1:1;
+  tween(0.5, k=>{
+    c.pivot.position.x = k*dir*4.5;
+    c.pivot.position.y = k*0.6;
+    c.pivot.rotation.z = k*dir*0.9;
+    c.pivot.rotation.y = k*dir*0.7;
+    c.pivot.scale.setScalar(1-k*0.25);
+  }, easeInOut, ()=>{ c.pivot.visible=false; });
+
+  if(index>=cards.length-1){
+    state="done";
+    setTimeout(showSummary, 420);
+    return;
+  }
+  index++;
+  updatePips();
+  setHint("<b>Tap the card</b> to flip it");
+  // bring the rest of the stack forward
+  for(let i=index;i<cards.length;i++){
+    const c2 = cards[i], target = stackPos(i);
+    const from = {x:c2.pivot.position.x,y:c2.pivot.position.y,z:c2.pivot.position.z,s:c2.pivot.scale.x};
+    tween(0.4, k=>{
+      c2.pivot.position.x = lerp(from.x,target.x,k);
+      c2.pivot.position.y = lerp(from.y,target.y,k);
+      c2.pivot.position.z = lerp(from.z,target.z,k);
+      c2.pivot.scale.setScalar(lerp(from.s, 1, k));
+    }, easeOut);
+  }
+}
+
+/* ---------- summary ---------- */
+function showSummary(){
+  packsOpened++;
+  renderSummary();
+}
+function renderSummary(){
+  UI.grid.innerHTML="";
+  let holos=0, reverses=0;
+  cards.forEach(card=>{
+    const d=document.createElement("div");
+    d.className="thumb"+(card.holo==="rare"?" hit":card.holo==="reverse"?" rev":"");
+    const img=document.createElement("img");
+    img.alt = card.mon.name;
+    try {
+      img.src = card.frontCanvas.toDataURL("image/png");
+      d.appendChild(img);
+    } catch(e){
+      // a cross-origin image tainted the canvas; show the name instead
+      const label=document.createElement("div");
+      label.style.cssText="display:grid;place-items:center;height:100%;font-size:11px;font-weight:700;padding:6px;text-align:center";
+      label.textContent = card.mon.name;
+      d.appendChild(label);
+    }
+    if(card.holo!=="none"){
+      const t=document.createElement("span");
+      t.className="tag "+(card.holo==="rare"?"g":"t");
+      t.textContent = card.holo==="rare"?"HOLO":"REVERSE";
+      d.appendChild(t);
+      if(card.holo==="rare") holos++; else reverses++;
+    } else if(card.mon.rarity==="R"){
+      const t=document.createElement("span"); t.className="tag"; t.textContent="RARE"; d.appendChild(t);
+    }
+    UI.grid.appendChild(d);
+  });
+  const rare = cards.find(c=>c.mon.rarity==="R");
+  UI.sumLede.textContent = holos
+    ? `${rare.mon.name} came out holo. That is roughly a one-in-three pack.`
+    : `Your rare this pack is ${rare.mon.name}. ${reverses?"The reverse holo is "+cards.find(c=>c.holo==="reverse").mon.name+".":""}`;
+  UI.summary.classList.add("on");
+  setHint("");
+}
+
+/* ============================================================
+   12. Input
+   ============================================================ */
+let pointer = {down:false, x0:0, y0:0, x:0, y:0, moved:0, t0:0, target:null};
+
+function localPoint(e){
+  const t = e.touches ? e.touches[0] : e;
+  return {x:t.clientX, y:t.clientY};
+}
+
+function onDown(e){
+  Audio2.unlock();
+  const p = localPoint(e);
+  pointer.down=true; pointer.x0=p.x; pointer.y0=p.y; pointer.x=p.x; pointer.y=p.y;
+  pointer.moved=0; pointer.t0=performance.now();
+
+  if(state==="idle"){
+    // is the touch near the top of the pack?
+    pointer.target = "pack";
+    UI.meter.style.opacity="1";
+    UI.action.style.display="none";
+    clearTimeout(idleTimer);
+  } else if(state==="viewing"){
+    pointer.target = "card";
+  } else pointer.target=null;
+}
+
+function onMove(e){
+  if(!pointer.down) return;
+  const p = localPoint(e);
+  const dx = p.x-pointer.x, dy = p.y-pointer.y;
+  pointer.moved += Math.abs(dx)+Math.abs(dy);
+  pointer.x=p.x; pointer.y=p.y;
+
+  if(pointer.target==="pack" && state==="idle"){
+    const before = tearProgress;
+    tearProgress = clamp(tearProgress + Math.abs(dx)/(window.innerWidth*0.62), 0, 1);
+    applyTear();
+    if(Math.floor(before*14)!==Math.floor(tearProgress*14)){
+      Audio2.rip(0.6+tearProgress*0.8);
+      if(navigator.vibrate) navigator.vibrate(6);
+    }
+    if(tearProgress>=1){ pointer.down=false; finishTear(); }
+  }
+  else if(pointer.target==="card" && state==="viewing"){
+    const card = cards[index];
+    if(card && card.flipped){
+      tilt.ty = clamp((pointer.x-pointer.x0)/window.innerWidth*1.6, -0.55, 0.55);
+      tilt.tx = clamp((pointer.y-pointer.y0)/window.innerHeight*1.1, -0.4, 0.4);
+    } else {
+      // small peek wobble before the flip
+      tilt.ty = clamp((pointer.x-pointer.x0)/window.innerWidth*0.7, -0.25, 0.25);
+    }
+  }
+}
+
+function onUp(){
+  if(!pointer.down) return;
+  const tapped = pointer.moved < 14 && (performance.now()-pointer.t0) < 400;
+  pointer.down=false;
+  tilt.tx=0; tilt.ty=0;
+
+  if(state==="idle"){
+    UI.meter.style.opacity = tearProgress>0 ? "1" : "0";
+    if(tearProgress>0 && tearProgress<1){
+      // spring back a little if they let go early
+      const from = tearProgress;
+      tween(0.35, k=>{ tearProgress = lerp(from, from*0.55, k); applyTear(); }, easeOut);
+      setHint("Keep dragging — the strip is almost off");
+    } else if(tapped){
+      setHint("Drag <b>sideways</b> across the tear strip at the top");
+    }
+  } else if(state==="viewing" && tapped){
+    const card = cards[index];
+    if(!card) return;
+    if(!card.flipped) flipCurrent();
+    else if(card.revealed) nextCard();
+  }
+}
+
+const el = renderer.domElement;
+el.addEventListener("touchstart", e=>{e.preventDefault(); onDown(e);}, {passive:false});
+el.addEventListener("touchmove", e=>{e.preventDefault(); onMove(e);}, {passive:false});
+el.addEventListener("touchend", e=>{e.preventDefault(); onUp(e);}, {passive:false});
+el.addEventListener("touchcancel", onUp);
+el.addEventListener("mousedown", onDown);
+window.addEventListener("mousemove", onMove);
+window.addEventListener("mouseup", onUp);
+
+UI.action.addEventListener("click", ()=>{
+  if(state!=="idle") return;
+  Audio2.unlock(); Audio2.tap();
+  UI.action.style.display="none";
+  UI.meter.style.opacity="1";
+  const from = tearProgress;
+  tween(1.0, k=>{
+    tearProgress = lerp(from, 1, k); applyTear();
+    if(Math.random()<0.35) Audio2.rip(0.5+tearProgress*0.8);
+  }, easeInOut, ()=>{ if(state==="idle") finishTear(); });
+});
+
+UI.again.addEventListener("click", ()=>{ Audio2.tap(); newPack(); });
+const Motion = (function(){
+  let enabled=false, receiving=false, base=null;
+  let tx=0, ty=0, cx=0, cy=0;
+  const RANGE = 32;   // degrees of tilt for the full sweep
+
+  function screenAngle(){
+    if(window.screen && screen.orientation && typeof screen.orientation.angle === "number")
+      return screen.orientation.angle;
+    return window.orientation || 0;
+  }
+  function onOrient(e){
+    if(e.beta == null || e.gamma == null) return;
+    receiving = true;
+    const a = screenAngle()*Math.PI/180;
+    const g =  e.gamma*Math.cos(a) + e.beta*Math.sin(a);
+    const b =  e.beta *Math.cos(a) - e.gamma*Math.sin(a);
+    if(!base) base = {b:b, g:g};
+    ty = clamp((g-base.g)/RANGE, -1, 1);
+    tx = clamp((b-base.b)/RANGE, -1, 1);
+  }
+  return {
+    supported(){ return typeof DeviceOrientationEvent !== "undefined"; },
+    needsPermission(){
+      return typeof DeviceOrientationEvent !== "undefined" &&
+             typeof DeviceOrientationEvent.requestPermission === "function";
+    },
+    isOn(){ return enabled; },
+    isReceiving(){ return receiving; },
+    recentre(){ base = null; },
+    enable(){
+      const attach = ()=>{
+        window.addEventListener("deviceorientation", onOrient, true);
+        enabled = true; base = null;
+        return true;
+      };
+      if(this.needsPermission()){
+        // iOS only grants this from inside a user gesture
+        return DeviceOrientationEvent.requestPermission()
+          .then(r => r === "granted" ? attach() : false)
+          .catch(()=> false);
+      }
+      return Promise.resolve(attach());
+    },
+    disable(){
+      window.removeEventListener("deviceorientation", onOrient, true);
+      enabled=false; tx=0; ty=0;
+    },
+    step(){
+      cx = lerp(cx, enabled?tx:0, 0.12);
+      cy = lerp(cy, enabled?ty:0, 0.12);
+      return {x:cx, y:cy};
+    }
+  };
+})();
+
+const tiltBtn = document.getElementById("tiltbtn");
+function paintTiltBtn(){
+  if(!tiltBtn) return;
+  if(Motion.isOn()) tiltBtn.classList.add("on"); else tiltBtn.classList.remove("on");
+}
+if(tiltBtn && Motion.supported()){
+  tiltBtn.hidden = false;
+  tiltBtn.addEventListener("click", ()=>{
+    Audio2.unlock(); Audio2.tap();
+    if(Motion.isOn()){
+      Motion.disable(); paintTiltBtn();
+      setHint("Tilt shine off — drag a card to move the shine");
+    } else {
+      Promise.resolve(Motion.enable()).then(ok=>{
+        paintTiltBtn();
+        setHint(ok ? "Tilt the phone to move the shine"
+                   : "This browser wouldn't allow motion access");
+      });
+    }
+  });
+  // Android and desktop sensors need no prompt, so turn it on quietly and
+  // hide the button again if nothing ever arrives.
+  if(!Motion.needsPermission()){
+    Promise.resolve(Motion.enable()).then(()=>{
+      paintTiltBtn();
+      setTimeout(()=>{
+        if(!Motion.isReceiving()){ Motion.disable(); tiltBtn.hidden = true; }
+        paintTiltBtn();
+      }, 2500);
+    });
+  }
+}
+
+UI.sound.addEventListener("click", ()=>{
+  Audio2.unlock();
+  const m = !Audio2.isMuted();
+  Audio2.setMuted(m);
+  UI.sound.textContent = m ? "✕" : "♪";
+  UI.sound.setAttribute("aria-label", m?"Unmute sound":"Mute sound");
+});
+
+
+/* ============================================================
+   13. Loop
+   ============================================================ */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+  stepTweens(dt);
+
+  if(packGroup && state==="idle"){
+    if(tearProgress === 0){
+      packGroup.rotation.y = Math.sin(t*0.6)*0.22;
+      packGroup.rotation.x = Math.sin(t*0.45)*0.08;
+      packGroup.position.y = 0.05 + Math.sin(t*1.1)*0.035;
+    } else {
+      // Once tearing starts the wrapper must settle square on. Rotated even a
+      // few degrees, its front face sweeps back behind the cards waiting
+      // inside and they show through the foil.
+      packGroup.rotation.y = lerp(packGroup.rotation.y, 0, 0.2);
+      packGroup.rotation.x = lerp(packGroup.rotation.x, 0, 0.2);
+      packGroup.position.y = lerp(packGroup.position.y, 0.05, 0.2);
+    }
+  }
+
+  tilt.x = lerp(tilt.x, tilt.tx, 0.16);
+  tilt.y = lerp(tilt.y, tilt.ty, 0.16);
+  const mo = Motion.step();
+
+  cards.forEach((card,i)=>{
+    if(!card.pivot || !card.pivot.visible) return;
+    card.frontMat.uniforms.uTime.value = t;
+    // a few degrees of wrist movement sweeps the whole pattern while the card
+    // itself barely moves, which is how a real foil card behaves
+    // dragging up leans the top edge away from you, as if pushing the far
+    // edge back — the inverse reads as the card falling toward you
+    card.frontMat.uniforms.uTilt.value.set(mo.y*1.7, mo.x*1.7);
+    if(i===index && state==="viewing" && card.revealed){
+      card.pivot.rotation.y = tilt.y + mo.y*0.16;
+      card.pivot.rotation.x = tilt.x + mo.x*0.16;
+    } else if(i===index && state==="viewing" && !card.flipped){
+      card.pivot.rotation.y = Math.PI + tilt.y + Math.sin(t*0.9)*0.03;
+      card.pivot.rotation.x = Math.sin(t*0.7)*0.02;
+    }
+  });
+
+  renderer.render(scene,camera);
+}
+animate();
+// Show a pack straight away using the built-in fallback art. The 151 remote
+// sprites then load in the background, and the pack is rebuilt with the real
+// art once they arrive — as long as it hasn't been torn open yet.
+newPack();
+preloadSpriteImages()
+  .then(()=>{ if(state==="idle" && tearProgress===0) newPack(); })
+  .catch(err=>{ console.error(err); });
+
+};
+</script>
+
+<script>
+(function(){
+  var SOURCES = [
+    "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+    "https://unpkg.com/three@0.128.0/build/three.min.js"
+  ];
+  var sourceIndex=0, loading=false, started=false;
+  var bar=document.getElementById("bootProgress");
+  var pct=document.getElementById("bootPercent");
+  var status=document.getElementById("bootStatus");
+  function progress(n,text){
+    if(bar) bar.style.width=n+"%";
+    if(pct) pct.textContent=Math.round(n)+"%";
+    if(status && text) status.textContent=text;
+  }
+  function startApp(){
+    if(started || !window.THREE || typeof window.bootPackOpener!=="function") return false;
+    started=true;
+    progress(100,"3D engine loaded. Starting pack opener…");
+    try {
+      window.bootPackOpener();
+      var b=document.getElementById("boot");
+      if(b) b.remove();
+    } catch(e){
+      console.error(e);
+      var b=document.getElementById("boot");
+      if(b) b.innerHTML='<div class="bootbox"><b>Startup error</b><div style="margin-top:8px">'+String(e&&e.message||e)+'</div><button class="cta" style="margin-top:18px" onclick="location.reload()">Retry</button></div>';
+    }
+    return true;
+  }
+  function loadNext(){
+    if(startApp() || loading) return;
+    if(sourceIndex>=SOURCES.length){
+      progress(100,"The 3D engine could not be loaded.");
+      var b=document.getElementById("boot");
+      if(b) b.innerHTML='<div class="bootbox"><b>Couldn’t load the 3D engine</b><div style="margin-top:8px">All Three.js sources failed. Check your internet connection and reload.</div><button class="cta" style="margin-top:18px" onclick="location.reload()">Retry</button></div>';
+      return;
+    }
+    loading=true;
+    var idx=sourceIndex++, src=SOURCES[idx];
+    var base=5+idx*28;
+    progress(base,"Getting the 3D engine ready… (source "+(idx+1)+"/"+SOURCES.length+")");
+    var sc=document.createElement("script");
+    sc.src=src; sc.async=false;
+    var done=false;
+    var timer=setTimeout(function(){
+      if(done)return; done=true; loading=false;
+      progress(Math.min(base+8,90),"Source timed out — trying another…");
+      sc.remove(); setTimeout(loadNext,50);
+    },8000);
+    sc.onload=function(){
+      if(done)return; done=true; clearTimeout(timer); loading=false;
+      progress(Math.min(base+20,92),"3D engine downloaded. Starting…");
+      setTimeout(loadNext,0);
+    };
+    sc.onerror=function(){
+      if(done)return; done=true; clearTimeout(timer); loading=false;
+      progress(Math.min(base+8,90),"Source failed — trying another…");
+      sc.remove(); setTimeout(loadNext,50);
+    };
+    document.head.appendChild(sc);
+  }
+  // The app definition is already parsed above, so there is no race with bootPackOpener.
+  progress(2,"Preparing the 3D engine…");
+  loadNext();
+})();
+</script>
+</body>
+</html>
