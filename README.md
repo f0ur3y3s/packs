@@ -196,7 +196,13 @@ Drawn in `buildCardBack`, built against the Japanese *Pocket Monsters Card
 Game* back: navy field marbled with arcs that circle the centre, five broad
 cream rays (two up, two down, one straight down — nothing points straight up,
 which is what leaves the field clear behind the wordmark), a red keyline inside
-the cream stock, a gold wordmark arced over a ball, and a gold ribbon beneath.
+the cream stock, and a gold wordmark arced over the ball.
+
+The ball is tilted 18 degrees, measured off the reference by finding the
+centroids of its red and gold halves and taking the angle between them. Drawn
+level it reads as a badge rather than a sphere. Its shading and specular stay
+in screen space while the band and button rotate, because the light does not
+tilt with the ball.
 
 The wordmark reads KANTO SERIES rather than the original's, and the footer says
 the set is fan-made and unaffiliated — this is a fan project's own back in that

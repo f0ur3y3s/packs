@@ -1229,7 +1229,7 @@ function buildCardBack(){
   if(BACK_CANVAS) return BACK_CANVAS;
   const c=document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
   const ctx=c.getContext("2d"); const R=30;
-  const cx=CARD_W/2, cy=CARD_H*0.435;          // ball sits above centre
+  const cx=CARD_W/2, cy=CARD_H*0.455;          // ball sits just above centre
   const rnd = mulberry32(0x4b1d);              // fixed seed: the back never varies
 
   // Cream card stock, then the red keyline, then the navy field inside it --
@@ -1273,26 +1273,32 @@ function buildCardBack(){
   });
 
   // Ball. Red upper dome, a broad cream band that swells into a disc around
-  // the button, and a gold-tan lower dome -- the band on the original is cream
-  // and the underside gold, not black and white.
-  const br = 122;
+  // the button, and a gold-tan lower dome.
+  //
+  // The whole thing is tilted: measured off the reference, its pole leans 18
+  // degrees, so the band runs up to the right rather than flat. Drawn level it
+  // reads as a badge rather than a sphere someone photographed.
+  const br = 122, TILT = -18*Math.PI/180;
   ctx.save();
   ctx.beginPath(); ctx.arc(cx,cy,br,0,7); ctx.clip();
 
-  const top = ctx.createLinearGradient(cx, cy-br, cx, cy);
+  // Hemispheres and band, in the ball's own tilted frame. Oversized so no
+  // corner of a rect swings into view once rotated.
+  ctx.save();
+  ctx.translate(cx,cy); ctx.rotate(TILT);
+  const S2 = br*1.6;
+  const top = ctx.createLinearGradient(0, -br, 0, 0);
   top.addColorStop(0,"#c8121f"); top.addColorStop(.42,"#e8202f"); top.addColorStop(1,"#a50d1a");
-  ctx.fillStyle=top; ctx.fillRect(cx-br, cy-br, br*2, br);
-
-  const bot = ctx.createLinearGradient(cx, cy, cx, cy+br);
+  ctx.fillStyle=top; ctx.fillRect(-S2, -S2, S2*2, S2);
+  const bot = ctx.createLinearGradient(0, 0, 0, br);
   bot.addColorStop(0,"#f0dca6"); bot.addColorStop(.38,"#d8b862"); bot.addColorStop(1,"#8a6a22");
-  ctx.fillStyle=bot; ctx.fillRect(cx-br, cy, br*2, br);
-
-  // Cream band, swelling to a disc behind the button.
+  ctx.fillStyle=bot; ctx.fillRect(-S2, 0, S2*2, S2);
   ctx.fillStyle="#f7f1e0";
-  ctx.fillRect(cx-br, cy-br*0.125, br*2, br*0.25);
-  ctx.beginPath(); ctx.arc(cx, cy, br*0.40, 0, 7); ctx.fill();
+  ctx.fillRect(-S2, -br*0.125, S2*2, br*0.25);
+  ctx.beginPath(); ctx.arc(0, 0, br*0.40, 0, 7); ctx.fill();
+  ctx.restore();
 
-  // Sphere shading: rim falls away, one specular high on the upper right.
+  // Shading stays in screen space: the light does not tilt with the ball.
   const shade = ctx.createRadialGradient(cx-br*0.30, cy-br*0.34, br*0.12,
                                          cx-br*0.05, cy, br*1.16);
   shade.addColorStop(0,"rgba(255,255,255,.20)");
@@ -1311,67 +1317,19 @@ function buildCardBack(){
   ctx.beginPath(); ctx.arc(cx,cy,br,0,7);
   ctx.strokeStyle="#2b2118"; ctx.lineWidth=4; ctx.stroke();
 
-  // Button: a ringed metal dome, not a flat disc.
-  ctx.beginPath(); ctx.arc(cx,cy,br*0.30,0,7);
+  // Button, carried round by the same tilt and sitting a little below centre,
+  // where the equator of a sphere leaning away from you actually crosses.
+  const bcx = cx + Math.sin(TILT)*br*0.10, bcy = cy + br*0.055;
+  ctx.beginPath(); ctx.arc(bcx,bcy,br*0.30,0,7);
   ctx.fillStyle="#2b2118"; ctx.fill();
-  const dome = ctx.createLinearGradient(cx-br*0.2, cy-br*0.26, cx+br*0.18, cy+br*0.26);
+  const dome = ctx.createLinearGradient(bcx-br*0.2, bcy-br*0.26, bcx+br*0.18, bcy+br*0.26);
   dome.addColorStop(0,"#fdf0c4"); dome.addColorStop(.45,"#d9b45c"); dome.addColorStop(1,"#7d5c18");
-  ctx.beginPath(); ctx.arc(cx,cy,br*0.255,0,7); ctx.fillStyle=dome; ctx.fill();
+  ctx.beginPath(); ctx.arc(bcx,bcy,br*0.255,0,7); ctx.fillStyle=dome; ctx.fill();
   [[0.19,"rgba(120,88,24,.55)"],[0.15,"rgba(253,240,196,.75)"],[0.10,"rgba(140,104,30,.5)"]].forEach(([r,col])=>{
-    ctx.beginPath(); ctx.arc(cx,cy,br*r,0,7);
+    ctx.beginPath(); ctx.arc(bcx,bcy,br*r,0,7);
     ctx.strokeStyle=col; ctx.lineWidth=3; ctx.stroke();
   });
 
-  // Ribbon: an arched band with folded ends and notched tails, not a bar.
-  const ry = cy + br + 46, rw = 150, rh = 30, sag = 15;
-  ctx.save();
-  const ribFill = ctx.createLinearGradient(0, ry-rh, 0, ry+rh+sag);
-  ribFill.addColorStop(0,"#ffe98d"); ribFill.addColorStop(.45,"#f7c81f"); ribFill.addColorStop(1,"#c8940a");
-
-  // Tails first, so the main band overlaps their inner edge.
-  [-1, 1].forEach(dir=>{
-    const tx = cx + dir*rw;
-    ctx.beginPath();
-    ctx.moveTo(tx, ry - rh*0.5);
-    ctx.lineTo(tx + dir*74, ry - rh*0.1);
-    ctx.lineTo(tx + dir*56, ry + rh*0.55);        // notch
-    ctx.lineTo(tx + dir*74, ry + rh*1.25);
-    ctx.lineTo(tx, ry + rh*0.95);
-    ctx.closePath();
-    ctx.fillStyle = ribFill; ctx.fill();
-    ctx.strokeStyle="#6b4a05"; ctx.lineWidth=2.5; ctx.stroke();
-  });
-  // Folds where the band turns back.
-  [-1, 1].forEach(dir=>{
-    const tx = cx + dir*rw;
-    ctx.beginPath();
-    ctx.moveTo(tx, ry - rh*0.5); ctx.lineTo(tx + dir*10, ry - rh*0.2);
-    ctx.lineTo(tx + dir*10, ry + rh*1.0); ctx.lineTo(tx, ry + rh*0.95);
-    ctx.closePath();
-    ctx.fillStyle="#a87a06"; ctx.fill();
-    ctx.strokeStyle="#6b4a05"; ctx.lineWidth=2; ctx.stroke();
-  });
-  // Main band, sagging through the middle.
-  ctx.beginPath();
-  ctx.moveTo(cx-rw, ry-rh*0.5);
-  ctx.quadraticCurveTo(cx, ry-rh*0.5+sag, cx+rw, ry-rh*0.5);
-  ctx.lineTo(cx+rw, ry+rh*0.95);
-  ctx.quadraticCurveTo(cx, ry+rh*0.95+sag, cx-rw, ry+rh*0.95);
-  ctx.closePath();
-  ctx.fillStyle = ribFill; ctx.fill();
-  ctx.strokeStyle="#6b4a05"; ctx.lineWidth=3; ctx.stroke();
-
-  ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.font="800 30px "+CARD_FONT;
-  ctx.lineWidth=5; ctx.lineJoin="round"; ctx.strokeStyle="#6b1008";
-  ctx.strokeText("CARD GAME", cx, ry+rh*0.26+sag*0.55);
-  ctx.fillStyle="#e01f22";
-  ctx.fillText("CARD GAME", cx, ry+rh*0.26+sag*0.55);
-  ctx.restore();
-
-  // Footer line, in the place the original puts its small print.
-  // Dark, because the straight-down band puts white under it -- which is
-  // exactly why the original's small print down here is dark red, not white.
   // textAlign is reset here on purpose: the ribbon block set it to center
   // inside its own save/restore, so by this point it is back to the default
   // and the footer would run off to the right of centre.
