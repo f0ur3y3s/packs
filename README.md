@@ -185,6 +185,12 @@ through the same `buildCardFace` the pack uses; `statsFor` is seeded from the
 Pokémon's name, so the card is identical to the one pulled and nothing about it
 needs storing.
 
+## Planned work
+
+`BACKGROUNDS.md` plans replacing the flat art-window gradient with procedural
+habitat scenes, driven by the `habitat` field already in `SPRITE_META`.
+`docs/bg-poc.png` is a prototype of the nine habitats.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.
