@@ -129,7 +129,12 @@ backgrounds.
 python3 bundle-sprites.py                              # animated showdown (default)
 python3 bundle-sprites.py --inline kanto-pack-opener.html   # + self-contained copy
 python3 bundle-sprites.py --set gen1                   # static Red/Blue stills
+python3 bundle-sprites.py --reuse-data --inline kanto-pack-opener.html  # re-splice only
 ```
+
+Most commits change only the HTML, and the bundled copy has to be regenerated
+for every one of them. `--reuse-data` does that splice from the `sprites-data.js`
+already on disk, so it needs no network and produces byte-identical art.
 
 `--set` also takes `bw` (animated Gen 5 pixel art), `default`, and `home` (3D
 renders — stills, so nothing animates). `--max-frames` trades bundle size

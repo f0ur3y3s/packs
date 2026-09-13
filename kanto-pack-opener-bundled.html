@@ -2452,21 +2452,31 @@ function updatePips(){
 }
 
 /* ---------- start a new pack ---------- */
-function newPack(){
+// silent: the artwork arrived after boot, so the pack and its cards are rebuilt
+// in place. Re-playing the drop-in zoom there reads as the page loading twice.
+function newPack(opts){
+  const silent = Boolean(opts && opts.silent);
   // clear old
   cards.forEach(c=>{ if(c.pivot) scene.remove(c.pivot); });
   cards = generatePack();
   index=0; tearProgress=0; tweens.length=0;
   if(packGroup){ scene.remove(packGroup); packGroup=null; }
   buildPackMeshes();
-  packGroup.scale.setScalar(0.001);
-  tween(0.65, k=>{ packGroup.scale.setScalar(lerp(0.001,1,k)); }, back);
+  if(silent){
+    packGroup.scale.setScalar(1);
+  } else {
+    packGroup.scale.setScalar(0.001);
+    tween(0.65, k=>{ packGroup.scale.setScalar(lerp(0.001,1,k)); }, back);
+  }
   state="idle";
   UI.summary.classList.remove("on");
   UI.pips.innerHTML="";
   UI.meter.style.opacity="0";
-  UI.action.style.display="none";
   setHint("Drag sideways across the <b>tear strip</b> at the top of the pack");
+  // A silent rebuild leaves the idle countdown -- and the button it may have
+  // already revealed -- exactly where it was.
+  if(silent) return;
+  UI.action.style.display="none";
   clearTimeout(idleTimer);
   idleTimer = setTimeout(()=>{
     if(state==="idle" && tearProgress===0) UI.action.style.display="block";
@@ -3367,6 +3377,10 @@ animate();
 // art once they arrive — as long as it hasn't been torn open yet.
 // Test hook: render the art window for named Pokemon without opening packs.
 window.__back = function(){ return buildCardBack().toDataURL("image/png"); };
+// Test hook: the harness samples this to count the pack's drop-in animations.
+// The pack should play its entrance exactly once per pack, not again when the
+// artwork finishes loading.
+window.__packScale = function(){ return packGroup ? packGroup.scale.x : 0; };
 window.__sheet = function(names){
   return names.map(n=>{
     const mon = MON_BY_NAME[n];
@@ -3396,7 +3410,7 @@ loadSpriteData()
     if(!ok) console.warn(`[art] ${SPRITE_DATA_URL} unavailable — falling back to the sprite CDNs.`);
     return preloadSpriteImages();
   })
-  .then(()=>{ if(state==="idle" && tearProgress===0) newPack(); })
+  .then(()=>{ if(state==="idle" && tearProgress===0) newPack({silent:true}); })
   .catch(err=>{ console.error(err); });
 
 };
