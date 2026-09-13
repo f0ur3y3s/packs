@@ -274,6 +274,18 @@ Two consequences worth knowing:
 The shader's old UV parallax is gone. It faked exactly this effect, and running
 both doubled the movement.
 
+## Page chrome
+
+The palette is taken from the set's own artefacts rather than picked in the
+abstract: the navy is the card back's field, the paper its stock, the gold its
+ribbon and wordmark, the red its ball. Teal survives but now means only one
+thing — foil. The background carries a very faint echo of the card back's
+sunburst, kept low-contrast so the pack stays the brightest thing on screen.
+
+Gold is the action colour, so the primary button, the active filter chip, the
+tilt toggle and the current pip all read as the same affordance. The wordmark
+carries a small CSS ball, the same mark as the pack and the card back.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.

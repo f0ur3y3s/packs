@@ -7,19 +7,30 @@
 <title>Kanto Pack Opener</title>
 <style>
   :root{
-    --ink:#0c0a1e;
-    --ink-2:#161233;
+    /* Taken from the set's own artefacts rather than picked in the abstract:
+       the navy is the card back's field, the paper its stock, the gold its
+       ribbon and the red its ball. Teal stays, but only to mean foil. */
+    --ink:#070c22;
+    --ink-2:#0f1a44;
+    --navy:#133477;
     --foil:#42e8d8;
     --foil-2:#ff4fa3;
-    --gold:#ffd15c;
-    --paper:#f4f2ee;
-    --muted:#9a93c4;
+    --gold:#f6c828;
+    --gold-2:#ffe27a;
+    --red:#d6182b;
+    --paper:#f4efe1;
+    --muted:#8e9ccb;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
   body{
+    /* A faint echo of the card back's sunburst over the navy, so the page
+       reads as part of the same set rather than a neutral shell around it.
+       Kept very low contrast: the pack has to stay the brightest thing. */
     background:
-      radial-gradient(120% 80% at 50% 8%, #2a2160 0%, #150f33 45%, #0c0a1e 100%);
+      repeating-conic-gradient(from 8deg at 50% 30%,
+        rgba(255,255,255,.022) 0deg 7deg, rgba(255,255,255,0) 7deg 20deg),
+      radial-gradient(125% 85% at 50% 10%, #1b2e6b 0%, #101a44 42%, #070c22 100%);
     color:var(--paper);
     font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     touch-action:none;
@@ -30,11 +41,11 @@
   canvas{display:block}
   #stage canvas{width:100% !important;height:100% !important;display:block}
   #boot{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:32px;text-align:center;
-    background:#0c0a1e;font-size:14px;line-height:1.6;color:var(--muted)}
+    background:var(--ink);font-size:14px;line-height:1.6;color:var(--muted)}
   #boot b{display:block;color:var(--paper);font-size:16px;margin-bottom:6px}
   .bootbox{width:min(340px,82vw)}
   .bootbar{height:7px;margin:18px 0 8px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
-  .bootbar i{display:block;width:0%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--foil),var(--foil-2));transition:width .18s ease}
+  .bootbar i{display:block;width:0%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--gold),var(--gold-2));transition:width .18s ease}
   #bootPercent{font-size:11px;color:var(--muted);letter-spacing:.08em}
   #fx{position:fixed;inset:0;pointer-events:none;z-index:5}
 
@@ -42,12 +53,20 @@
   #hud{position:fixed;inset:0;z-index:10;pointer-events:none;
        padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 18px)}
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .wordmark{font-weight:800;font-size:15px;letter-spacing:.14em;line-height:1}
-  .wordmark span{display:block;font-weight:500;font-size:10px;letter-spacing:.22em;color:var(--muted);margin-top:5px}
+  .wordmark{font-weight:800;font-size:15px;letter-spacing:.14em;line-height:1;color:var(--gold);
+    display:flex;align-items:center;gap:10px}
+  .wordmark .ball{width:20px;height:20px;border-radius:50%;flex:0 0 auto;
+    background:linear-gradient(160deg,var(--red) 0 46%,#f7f1e0 46% 54%,#d8b862 54% 100%);
+    box-shadow:0 0 0 1.5px #2b2118, inset 0 0 0 3px rgba(0,0,0,.12);
+    position:relative;transform:rotate(-18deg)}
+  .wordmark .ball::after{content:"";position:absolute;inset:38%;border-radius:50%;
+    background:#f2e6bd;box-shadow:0 0 0 1.5px #2b2118}
+  .wordmark span{display:block;font-weight:500;font-size:10px;letter-spacing:.22em;
+    color:var(--muted);margin-top:5px}
   .iconbtn{pointer-events:auto;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.16);
     background:rgba(255,255,255,.06);color:var(--paper);font-size:16px;display:grid;place-items:center;backdrop-filter:blur(8px)}
   .iconbtn:active{transform:scale(.93)}
-  .iconbtn.on{background:rgba(66,232,216,.22);border-color:rgba(66,232,216,.7);color:#8ef7ea}
+  .iconbtn.on{background:rgba(246,200,40,.20);border-color:rgba(246,200,40,.72);color:var(--gold-2)}
 
   #bottom{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 20px);
     display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 18px}
@@ -56,21 +75,21 @@
     transition:opacity .3s ease}
   #hint b{color:var(--paper);font-weight:600}
   .cta{pointer-events:auto;border:0;border-radius:999px;padding:15px 30px;font-size:15px;font-weight:700;
-    letter-spacing:.03em;color:#131033;background:linear-gradient(180deg,#7af5e6,#2fd0bd);
-    box-shadow:0 10px 30px -10px rgba(66,232,216,.7);transition:transform .12s ease,opacity .2s}
+    letter-spacing:.03em;color:#3a2706;background:linear-gradient(180deg,var(--gold-2),#e0aa0c);
+    box-shadow:0 10px 30px -12px rgba(246,200,40,.75);transition:transform .12s ease,opacity .2s}
   .cta:active{transform:translateY(2px) scale(.98)}
   .cta.ghost{background:rgba(255,255,255,.08);color:var(--paper);border:1px solid rgba(255,255,255,.2);box-shadow:none}
 
   #pips{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:280px}
   .pip{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2);transition:all .25s ease}
   .pip.done{background:rgba(255,255,255,.55)}
-  .pip.now{background:var(--foil);transform:scale(1.5)}
+  .pip.now{background:var(--gold);transform:scale(1.5)}
   .pip.hit{background:var(--gold)}
 
   /* ---------- rip meter ---------- */
   #meter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 118px);
     width:180px;height:4px;border-radius:4px;background:rgba(255,255,255,.14);overflow:hidden;opacity:0;transition:opacity .2s}
-  #meter i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--foil),var(--foil-2));border-radius:4px}
+  #meter i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--gold),var(--red));border-radius:4px}
 
   /* ---------- celebration banner ---------- */
   #banner{position:absolute;left:0;right:0;top:34%;text-align:center;opacity:0;transform:scale(.8);
@@ -83,14 +102,14 @@
   #banner .sub{margin-top:8px;font-size:12px;letter-spacing:.26em;color:rgba(255,255,255,.72);font-weight:600}
 
   /* ---------- summary ---------- */
-  #summary{position:fixed;inset:0;z-index:20;background:rgba(9,7,24,.94);backdrop-filter:blur(14px);
+  #summary{position:fixed;inset:0;z-index:20;background:rgba(7,12,34,.95);backdrop-filter:blur(14px);
     display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 18px)}
   #summary.on{display:flex}
-  #summary h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.01em}
+  #summary h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.01em;color:var(--gold)}
   #summary p.lede{margin:6px 0 16px;color:var(--muted);font-size:13.5px;line-height:1.5}
   #grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding-bottom:16px;
     -webkit-overflow-scrolling:touch}
-  .thumb{position:relative;border-radius:7px;overflow:hidden;background:#1b1640;aspect-ratio:1/1.4}
+  .thumb{position:relative;border-radius:7px;overflow:hidden;background:#131d45;aspect-ratio:1/1.4}
   .thumb img{width:100%;height:100%;display:block}
   .thumb.hit{box-shadow:0 0 0 2px var(--gold),0 8px 22px -8px rgba(255,209,92,.7)}
   .thumb.rev{box-shadow:0 0 0 2px var(--foil)}
@@ -101,17 +120,17 @@
   #summary .row.foot{gap:10px}
   #summary .cta{flex:1}
   /* ---- binder ---- */
-  #binder{position:fixed;inset:0;z-index:22;background:rgba(9,7,24,.96);backdrop-filter:blur(14px);
+  #binder{position:fixed;inset:0;z-index:22;background:rgba(7,12,34,.96);backdrop-filter:blur(14px);
     display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 18px) 14px calc(env(safe-area-inset-bottom) + 14px)}
   #binder.on{display:flex}
   #binder .bhead{align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
-  #binder h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+  #binder h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em;color:var(--gold)}
   #binder .lede{margin:5px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
   #binderFilters{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 11px}
   .chip{pointer-events:auto;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);
     color:var(--paper);font:inherit;font-size:12px;font-weight:700;letter-spacing:.02em;
     padding:7px 13px;border-radius:999px;cursor:pointer;transition:background .12s,border-color .12s}
-  .chip.on{background:rgba(66,232,216,.20);border-color:rgba(66,232,216,.7);color:#8ef7ea}
+  .chip.on{background:rgba(246,200,40,.18);border-color:rgba(246,200,40,.7);color:var(--gold-2)}
   .chip .c{opacity:.6;margin-left:5px;font-weight:600}
   #binderGrid{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:grid;gap:8px;
     grid-template-columns:repeat(auto-fill,minmax(86px,1fr));
@@ -119,10 +138,10 @@
        every row rounded to a slightly different height and the grid looked
        misaligned. */
     grid-auto-rows:106px;align-content:start;padding-bottom:14px}
-  .slot{position:relative;border-radius:8px;background:#171241;border:1px solid rgba(255,255,255,.07);
+  .slot{position:relative;border-radius:8px;background:#111a3e;border:1px solid rgba(255,255,255,.07);
     display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;
     padding-bottom:13px;cursor:default;transition:transform .12s ease,border-color .12s ease}
-  .slot.own{background:linear-gradient(160deg,#241c58,#181246);border-color:rgba(255,255,255,.14);cursor:pointer}
+  .slot.own{background:linear-gradient(160deg,#1b2a60,#121c46);border-color:rgba(255,255,255,.14);cursor:pointer}
   .slot.own:active{transform:scale(.96)}
   .slot .art{image-rendering:pixelated;background-repeat:no-repeat;flex:0 0 auto}
   .slot.miss .art{filter:brightness(0) opacity(.30)}
@@ -133,7 +152,7 @@
     background:rgba(255,255,255,.82);border-radius:999px;padding:1px 4px}
   .slot.holo{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 18px -8px rgba(255,209,92,.65)}
   .slot.rev{border-color:var(--foil);box-shadow:0 0 0 1px var(--foil)}
-  #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(9,7,24,.97);backdrop-filter:blur(10px);
+  #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(7,12,34,.975);backdrop-filter:blur(10px);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
   #binderDetail[hidden]{display:none}
   #binderStage{width:min(78vw,360px);height:min(60vh,480px);touch-action:none;cursor:grab}
@@ -153,7 +172,7 @@
 
 <div id="hud">
   <div class="row">
-    <div class="wordmark">KANTO SERIES<span>10 CARDS PER PACK</span></div>
+    <div class="wordmark"><i class="ball"></i><div>KANTO SERIES<span>10 CARDS PER PACK</span></div></div>
     <div style="display:flex;gap:8px">
       <button class="iconbtn" id="tiltbtn" aria-label="Use phone tilt for the holo shine" hidden>✦</button>
       <button class="iconbtn" id="binderbtn" aria-label="Open your binder">▦</button>
@@ -2855,6 +2874,21 @@ function showSummary(){
   Binder.countPack();
   renderSummary();
 }
+// The card face plus its sprite, on one canvas, for anywhere a still image of
+// the card is needed rather than the live mesh.
+let flatScratch = null;
+function flattenCardFace(card){
+  if(!flatScratch){
+    flatScratch = document.createElement("canvas");
+    flatScratch.width = CARD_W; flatScratch.height = CARD_H;
+  }
+  const x = flatScratch.getContext("2d");
+  x.clearRect(0,0,CARD_W,CARD_H);
+  x.drawImage(card.frontCanvas, 0, 0);
+  if(card.art) x.drawImage(card.art.canvas, card.art.x, card.art.y);
+  return flatScratch;
+}
+
 function renderSummary(){
   UI.grid.innerHTML="";
   let holos=0, reverses=0;
@@ -2864,7 +2898,10 @@ function renderSummary(){
     const img=document.createElement("img");
     img.alt = card.mon.name;
     try {
-      img.src = card.frontCanvas.toDataURL("image/png");
+      // The card face no longer holds the sprite -- it lives on its own quad in
+      // front of the card -- so a thumbnail taken straight from frontCanvas
+      // comes out as an empty habitat scene. Composite the two here.
+      img.src = flattenCardFace(card).toDataURL("image/png");
       d.appendChild(img);
     } catch(e){
       // a cross-origin image tainted the canvas; show the name instead
