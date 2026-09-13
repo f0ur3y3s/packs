@@ -380,18 +380,21 @@ const SCENES = {
 // Pokemon on a dark habitat is the one combination where the sprite stops
 // reading, so it stays the exception, and is lifted off its floor.
 const TIMES = [
-  {k:0.00, sky:null,      light:1.00},               // day
-  {k:0.00, sky:null,      light:1.00},               // day again
-  {k:0.28, sky:"#ffb47a", light:0.94},               // golden
-  {k:0.42, sky:"#6a5aa8", light:0.80},               // dusk
-  {k:0.50, sky:"#232a5c", light:0.70}                // night
+  {k:0.00, sky:null,      light:1.00, disc:"#fffbe8", glow:0.10, stars:0},
+  {k:0.00, sky:null,      light:1.00, disc:"#fffbe8", glow:0.10, stars:0},
+  {k:0.28, sky:"#ffb47a", light:0.94, disc:"#fff0c0", glow:0.42, stars:0},
+  {k:0.42, sky:"#6a5aa8", light:0.80, disc:"#ffd9a8", glow:0.38, stars:0.35},
+  {k:0.50, sky:"#232a5c", light:0.70, disc:"#eef2ff", glow:0.16, stars:1}
 ];
+// Accepts "#rrggbb" or "rgb(r,g,b)", because tone() returns the latter and the
+// palettes are written as the former.
+function parseCol(c){
+  if(c[0] === "#"){ const n=parseInt(c.slice(1),16); return [n>>16&255, n>>8&255, n&255]; }
+  return c.match(/\d+/g).slice(0,3).map(Number);
+}
 function mixCol(a,b,t){
-  const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
-  const r=Math.round((pa>>16&255)*(1-t)+(pb>>16&255)*t);
-  const g=Math.round((pa>>8&255)*(1-t)+(pb>>8&255)*t);
-  const bl=Math.round((pa&255)*(1-t)+(pb&255)*t);
-  return "rgb("+r+","+g+","+bl+")";
+  const pa=parseCol(a), pb=parseCol(b);
+  return "rgb(" + pa.map((v,i)=>Math.round(v*(1-t)+pb[i]*t)).join(",") + ")";
 }
 function tone(hex, T){
   const base = T.sky ? mixCol(hex, T.sky, T.k) : hex;
@@ -434,32 +437,60 @@ function ditherRegion(ctx, x, y, w, h, levels){
   ctx.putImageData(img, x, y);
 }
 
-function drawHabitatScene(ctx, habitat, name, x, y, w, h){
-  const S = SCENES[habitat] || SCENES.grassland;
+function drawHabitatScene(ctx, meta, name, x, y, w, h, finish){
+  const S = SCENES[meta.habitat] || SCENES.grassland;
   const rnd = mulberry32(hashStr(name + "·scene"));
   const T = TIMES[(rnd()*TIMES.length)|0];
+  // The species colour the card frame already uses, so the scene agrees with
+  // the card around it instead of being a separate decision.
+  const accent = (SPECIES_PALETTE[meta.color] || {}).c || null;
+  const showy = finish === "rare" || meta.rare;
+
   ctx.save();
   ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
 
-  const sky = ctx.createLinearGradient(x,y,x,y+h);
+  const sky = ctx.createLinearGradient(0,y,0,y+h);
   sky.addColorStop(0, tone(S.sky[0], T));
-  sky.addColorStop(1, tone(S.sky[1], T));
+  sky.addColorStop(0.62, tone(S.sky[1], T));
+  // A wash of the species colour low in the sky. Subtle: it should read as
+  // this Pokemon's weather, not as a coloured filter.
+  sky.addColorStop(1, accent ? mixCol(tone(S.sky[1], T), accent, 0.30)
+                             : tone(S.sky[1], T));
   ctx.fillStyle = sky; ctx.fillRect(x,y,w,h);
 
-  // Sun or moon, low and off to one side.
+  // Stars, before anything solid, at the times that have them.
+  if(T.stars > 0){
+    ctx.fillStyle = "#ffffff";
+    for(let i=0;i<70;i++){
+      const sx = x + rnd()*w, sy = y + rnd()*h*0.55;
+      ctx.globalAlpha = T.stars * (0.25 + rnd()*0.6);
+      ctx.fillRect(sx, sy, 1.6, 1.6);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   const discX = x + w*(0.18 + rnd()*0.64), discY = y + h*(0.16 + rnd()*0.18);
   const discR = h*(0.055 + rnd()*0.04);
-  ctx.globalAlpha = T.light < 0.7 ? 0.85 : 0.55;
-  ctx.fillStyle = T.light < 0.7 ? "#f2f0ff" : "#fffbe8";
+  // Glow first, so the disc sits inside it. This is what makes dawn and dusk
+  // look like times of day rather than the same sky under a colour wash.
+  if(T.glow > 0){
+    const gl = ctx.createRadialGradient(discX, discY, 1, discX, discY, h*0.62);
+    gl.addColorStop(0, "rgba(255,236,190," + (T.glow).toFixed(2) + ")");
+    gl.addColorStop(1, "rgba(255,236,190,0)");
+    ctx.fillStyle = gl; ctx.fillRect(x,y,w,h);
+  }
+  ctx.globalAlpha = T.light < 0.75 ? 0.9 : 0.6;
+  ctx.fillStyle = T.disc;
   ctx.beginPath(); ctx.arc(discX, discY, discR, 0, 6.29); ctx.fill();
   ctx.globalAlpha = 1;
 
   const horizon = y + h*(0.44 + rnd()*0.12);
   ridge(ctx, x, y, w, h, horizon - h*0.10, {a:h*0.09, p:rnd()*6.3, r:rnd}, 30, tone(S.far, T));
   ridge(ctx, x, y, w, h, horizon + h*0.06, {a:h*0.07, p:rnd()*6.3, r:rnd}, 24, tone(S.mid, T));
-  ridge(ctx, x, y, w, h, y + h*0.82,       {a:h*0.06, p:rnd()*6.3, r:rnd}, 34, tone(S.near, T));
+  // Nearest band carries the accent too, so it reads top and bottom.
+  const nearCol = accent ? mixCol(tone(S.near, T), accent, 0.18) : tone(S.near, T);
+  ridge(ctx, x, y, w, h, y + h*0.82, {a:h*0.06, p:rnd()*6.3, r:rnd}, 34, nearCol);
 
-  // Scatter: a handful of marks on the near band so it is not a bare shape.
   ctx.fillStyle = tone(S.mid, T); ctx.globalAlpha = 0.5;
   for(let i=0;i<18;i++){
     const sx = x + rnd()*w, sy = y + h*(0.84 + rnd()*0.14), r = 1.5 + rnd()*3.5;
@@ -467,7 +498,19 @@ function drawHabitatScene(ctx, habitat, name, x, y, w, h){
   }
   ctx.globalAlpha = 1;
 
-  // Lift the middle so a dark sprite still reads against a dark habitat.
+  // A rare pull gets weather worth the pull: a band of light across the sky.
+  if(showy){
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const au = ctx.createLinearGradient(x, y, x+w, horizon);
+    au.addColorStop(0.00,"rgba(80,220,200,0)");
+    au.addColorStop(0.42,"rgba(120,235,215,0.16)");
+    au.addColorStop(0.62,"rgba(200,170,255,0.13)");
+    au.addColorStop(1.00,"rgba(80,220,200,0)");
+    ctx.fillStyle = au; ctx.fillRect(x, y, w, horizon-y);
+    ctx.restore();
+  }
+
   const pop = ctx.createRadialGradient(x+w/2, y+h*0.54, h*0.06, x+w/2, y+h*0.54, h*0.78);
   pop.addColorStop(0, "rgba(255,255,255,0.13)");
   pop.addColorStop(1, "rgba(0,0,0,0.16)");
@@ -639,6 +682,7 @@ function spriteFrameAt(rec, ms){
 // silhouette. Rebuilding it per repaint costs a few operations on an ~84x78
 // canvas; caching a silhouette atlas per sprite would be faster but holds
 // megabytes per card, and repaints only happen at the GIF's frame rate.
+const MAX_SPRITE_SCALE = 5;
 let spriteScratch = null;
 function silhouetteOf(rec, sx, sy){
   if(!spriteScratch){
@@ -665,13 +709,18 @@ function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   // Snap to a whole-pixel multiple. At a fractional scale nearest-neighbour
   // gives some source rows 3 screen pixels and others 4, which reads as a
   // ragged, shimmering edge on the sprite.
-  // Whole-pixel scaling is crisper for pixel art, but only worth taking when
-  // it costs almost nothing. Flooring every scale above 2x meant a sprite
-  // fitting at 2.98 was drawn at 2.00 -- a third smaller than a neighbour
-  // fitting at 1.97, which kept its exact scale. Across the 151 that was a
-  // mean loss of 11% and a worst case of 33%, and it is why sizes looked
-  // inconsistent from card to card. Snap only within 8%.
-  let scale = Math.min(boxW/rec.fw, boxH/rec.fh);
+  // Two rules, in order.
+  //
+  // Cap the magnification. Filling the window meant a 47x33 sprite was blown up
+  // 8x, one source pixel to an 8x8 block, which is most of what "pixelated"
+  // meant. Capped, small Pokemon simply render smaller -- which reads naturally,
+  // since Kabuto is small and Onix is not.
+  //
+  // Then snap to whole pixels, but only when it costs under 8%. Whole pixels
+  // are crisper; flooring every scale above 2x drew a sprite fitting at 2.98 at
+  // 2.00, a third smaller than a neighbour fitting at 1.97 which kept its exact
+  // scale, and that is what made sizes look inconsistent.
+  let scale = Math.min(boxW/rec.fw, boxH/rec.fh, MAX_SPRITE_SCALE);
   const whole = Math.floor(scale);
   if(whole >= 2 && whole/scale >= 0.92) scale = whole;
   const dw = rec.fw*scale, dh = rec.fh*scale;
@@ -1174,7 +1223,7 @@ function buildCardFace(card, opts){
   // 6px lip around the window). Falls back to the plain gradient when the
   // bundle carries no metadata.
   if(meta && meta.habitat){
-    drawHabitatScene(ctx, meta.habitat, mon.name, artX, artY, artW, artH);
+    drawHabitatScene(ctx, meta, mon.name, artX, artY, artW, artH, card.holo);
   }
 
   // The inner border is stroked before the art rather than after it, so that

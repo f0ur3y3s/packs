@@ -1,6 +1,6 @@
 # Natural environments behind the sprites
 
-> **Status: phases 1–3 are built and shipped, and the artwork wash is gone.** Habitat scenes are drawn on
+> **Status: phases 1–4 are built and shipped, and the artwork wash is gone.** Habitat scenes are drawn on
 > every card. What is left is phase 4 (richer time-of-day and accents) and the
 > layered-parallax extension at the end. The rest of this document is the
 > reasoning behind the approach, kept because the trade-offs still apply.
@@ -111,7 +111,12 @@ Seeded variation across several axes, all cheap:
    with all 151 carrying a habitat, meant everywhere. It is now gone from the
    card and out of the bundle by default, taking 0.6 MB and 151 boot-time image
    decodes with it. `bundle-sprites.py --backdrops` brings it back.
-4. **Time-of-day ramps and accents**, once the base reads well.
+4. ~~**Time-of-day ramps and accents.**~~ Done. Each time of day now carries its
+   own light colour, a horizon glow around the sun or moon, and a star field at
+   night, rather than a single tint over one sky. The species colour from
+   `SPRITE_META` washes the lower sky and the nearest terrain band, so the scene
+   agrees with the card frame instead of being a separate decision. Holo rares
+   and legendaries get a band of light across the sky.
 
 ## The extension worth knowing about
 
