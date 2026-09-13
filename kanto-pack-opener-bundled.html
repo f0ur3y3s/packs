@@ -602,12 +602,15 @@ function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   // Snap to a whole-pixel multiple. At a fractional scale nearest-neighbour
   // gives some source rows 3 screen pixels and others 4, which reads as a
   // ragged, shimmering edge on the sprite.
-  // Snap only above 2x. Flooring everything sent the big sprites -- Charizard
-  // is 133x140 and fits at about 1.9x -- down to 1x, so they rendered at a
-  // third of the size they should. Below 2x the exact fit matters far more
-  // than whole-pixel crispness.
+  // Whole-pixel scaling is crisper for pixel art, but only worth taking when
+  // it costs almost nothing. Flooring every scale above 2x meant a sprite
+  // fitting at 2.98 was drawn at 2.00 -- a third smaller than a neighbour
+  // fitting at 1.97, which kept its exact scale. Across the 151 that was a
+  // mean loss of 11% and a worst case of 33%, and it is why sizes looked
+  // inconsistent from card to card. Snap only within 8%.
   let scale = Math.min(boxW/rec.fw, boxH/rec.fh);
-  if(scale > 2) scale = Math.floor(scale);
+  const whole = Math.floor(scale);
+  if(whole >= 2 && whole/scale >= 0.92) scale = whole;
   const dw = rec.fw*scale, dh = rec.fh*scale;
   const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
   const dx = artX + pad + (boxW-dw)/2, dy = artY + pad + (boxH-dh)/2;
@@ -1336,9 +1339,10 @@ function buildCardBack(){
   ctx.beginPath(); ctx.arc(cx,cy,br,0,7);
   ctx.strokeStyle="#2b2118"; ctx.lineWidth=4; ctx.stroke();
 
-  // Button, carried round by the same tilt and sitting a little below centre,
-  // where the equator of a sphere leaning away from you actually crosses.
-  const bcx = cx + Math.sin(TILT)*br*0.10, bcy = cy + br*0.055;
+  // Button on the ball's centre. It was offset to sit where the equator of a
+  // leaning sphere would cross, which was defensible but read as a mistake --
+  // the eye takes the button as the centre and the ball looked misaligned.
+  const bcx = cx, bcy = cy;
   ctx.beginPath(); ctx.arc(bcx,bcy,br*0.30,0,7);
   ctx.fillStyle="#2b2118"; ctx.fill();
   const dome = ctx.createLinearGradient(bcx-br*0.2, bcy-br*0.26, bcx+br*0.18, bcy+br*0.26);

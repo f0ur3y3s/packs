@@ -273,9 +273,12 @@ both doubled the movement.
   Highlights are additive over the art instead of mixing it toward flat
   rainbow, and a specular lobe gates both the sheen and the sparkle so a card
   held flat-on isn't covered in speckles.
-- Sprites are drawn at a whole-pixel scale. At a fractional one, nearest-
-  neighbour gave some source rows 3 screen pixels and others 4, which read as
-  ragged edges.
+- Sprites take a whole-pixel scale only when it costs under 8%. Whole pixels
+  are crisper — at a fractional scale nearest-neighbour gives some source rows
+  3 screen pixels and others 4 — but snapping every scale above 2x drew a
+  sprite fitting at 2.98 at 2.00, a third smaller than a neighbour fitting at
+  1.97 that kept its exact scale. Across the 151 that was a mean size loss of
+  11% and a worst case of 33%; with the 8% limit it is 1.8% and 7.9%.
 - The card's side faces take their colour from its own border. They were an
   unlit near-white, which rendered brighter than the shaded front and ringed
   every card in white.
