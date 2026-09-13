@@ -980,8 +980,13 @@ function buildCardFace(card){
       plate.getContext("2d").drawImage(c, artX, artY, artW, artH, 0, 0, artW, artH);
       // Offset each card within its loop so ten cards in a pack don't all
       // breathe in unison.
+      // The animated region gets its own canvas so only it has to reach the
+      // GPU each frame, instead of the whole 512x716 card face.
+      const artCanvas = document.createElement("canvas");
+      artCanvas.width = artW; artCanvas.height = artH;
       card.art = {x:artX, y:artY, w:artW, h:artH, plate, rec, frame:-1,
-                  phase: Math.random()*rec.total};
+                  phase: Math.random()*rec.total,
+                  canvas: artCanvas, ctx: artCanvas.getContext("2d")};
     }
     drawSpriteFrame(ctx, rec, 0, artX, artY, artW, artH);
   } else {
@@ -1241,12 +1246,28 @@ const Audio2 = (function(){
     if(ctx && ctx.state==="suspended") ctx.resume(); return ctx; }
   function env(node,t0,a,d,peak){ const g=node.gain; g.setValueAtTime(0.0001,t0);
     g.exponentialRampToValueAtTime(peak,t0+a); g.exponentialRampToValueAtTime(0.0001,t0+a+d); }
+  // Cache the decaying-noise buffers by duration. Filling one is a JS loop over
+  // thousands of samples and the tear asks for a dozen a second. Three variants
+  // per duration keeps it from sounding like a loop.
+  const noiseCache = new Map();
+  function noiseBuffer(c, dur){
+    const key = dur.toFixed(3);
+    let bank = noiseCache.get(key);
+    if(!bank){
+      bank = [];
+      const n = Math.floor(c.sampleRate*dur);
+      for(let v=0; v<3; v++){
+        const buf = c.createBuffer(1,n,c.sampleRate), d = buf.getChannelData(0);
+        for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+        bank.push(buf);
+      }
+      noiseCache.set(key, bank);
+    }
+    return bank[(Math.random()*bank.length)|0];
+  }
   function noise(dur,freq,q,vol){
     const c=ac(); if(!c||muted) return;
-    const n=Math.floor(c.sampleRate*dur);
-    const buf=c.createBuffer(1,n,c.sampleRate); const d=buf.getChannelData(0);
-    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
-    const src=c.createBufferSource(); src.buffer=buf;
+    const src=c.createBufferSource(); src.buffer=noiseBuffer(c, dur);
     const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq; bp.Q.value=q;
     const g=c.createGain(); g.gain.value=vol;
     src.connect(bp); bp.connect(g); g.connect(c.destination); src.start();
@@ -1460,6 +1481,7 @@ void main(){
 // per card: ten stacked shadows muddy into a grey smear, and a shadow parented
 // to the card would swing round in front of it on the flip.
 let cardShadow = null;
+const copyAt = new THREE.Vector2();
 function ensureCardShadow(){
   if(cardShadow) return cardShadow;
   const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
@@ -1487,10 +1509,38 @@ function stepCardArt(card, tSeconds){
   const f = spriteFrameAt(a.rec, tSeconds*1000 + a.phase);
   if(f === a.frame) return;
   a.frame = f;
-  const ctx = card.frontCanvas.getContext("2d");
-  ctx.drawImage(a.plate, a.x, a.y);
-  drawSpriteFrame(ctx, a.rec, f, a.x, a.y, a.w, a.h);
-  card.frontMat.uniforms.uMap.value.needsUpdate = true;
+  // Compose into the small art canvas...
+  const x = a.ctx;
+  x.drawImage(a.plate, 0, 0);
+  drawSpriteFrame(x, a.rec, f, 0, 0, a.w, a.h);
+
+  const tex = card.frontMat.uniforms.uMap.value;
+  if(card.artTex && renderer.copyTextureToTexture){
+    // ...and push just that rectangle. Re-uploading the whole face was
+    // 1.4 MB a frame against 0.49 MB for the window alone.
+    //
+    // The destination texture has flipY set (everything here is canvas-backed),
+    // so texSubImage2D writes the flipped source from a y measured up from the
+    // bottom of the card, not down from the top.
+    copyAt.set(a.x, CARD_H - a.y - a.h);
+    renderer.copyTextureToTexture(copyAt, card.artTex, tex);
+    // Keep the CPU-side face in step, so a later full upload is not stale.
+    card.frontCanvas.getContext("2d").drawImage(a.canvas, a.x, a.y);
+  } else {
+    card.frontCanvas.getContext("2d").drawImage(a.canvas, a.x, a.y);
+    tex.needsUpdate = true;
+  }
+}
+
+// Every card has the same back, so it was building ten identical 512x716
+// canvases, ten textures (1.4 MB of GPU memory each) and ten materials.
+let backMat = null;
+function sharedBackMaterial(){
+  if(backMat) return backMat;
+  const tex = new THREE.CanvasTexture(buildCardBack());
+  tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  backMat = new THREE.MeshPhongMaterial({map:tex, shininess:26, specular:0x3a4358});
+  return backMat;
 }
 
 function makeCardMesh(card){
@@ -1509,9 +1559,7 @@ function makeCardMesh(card){
     },
     vertexShader:HOLO_VS, fragmentShader:HOLO_FS
   });
-  const backTex = new THREE.CanvasTexture(buildCardBack());
-  backTex.minFilter = THREE.LinearFilter; backTex.generateMipmaps = false;
-  const backMat = new THREE.MeshPhongMaterial({map:backTex, shininess:26, specular:0x3a4358});
+  const backMat = sharedBackMaterial();
   // The sides used to be unlit near-white (#f2efe6), so they rendered brighter
   // than the shaded front and ringed every card in glowing white. Use the
   // card's own dark border tone, and shade it: an unlit side gives the card
@@ -1519,6 +1567,11 @@ function makeCardMesh(card){
   const edgeMat = new THREE.MeshPhongMaterial({
     color: new THREE.Color(faces.edge || "#6b6459"), shininess: 18, specular: 0x55504a
   });
+
+  if(card.art){
+    card.artTex = new THREE.CanvasTexture(card.art.canvas);
+    card.artTex.minFilter = THREE.LinearFilter; card.artTex.generateMipmaps = false;
+  }
 
   const geo = new THREE.BoxGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D);
   const mesh = new THREE.Mesh(geo, [edgeMat,edgeMat,edgeMat,edgeMat,frontMat,backMat]);
@@ -2186,7 +2239,7 @@ function animate(){
   tilt.y = lerp(tilt.y, tilt.ty, 0.16);
   const mo = Motion.step();
 
-  const shadow = ensureCardShadow();
+  const shadow = cardShadow || ensureCardShadow();
   let shadowOn = false;
   cards.forEach((card,i)=>{
     if(!card.pivot || !card.pivot.visible) return;
