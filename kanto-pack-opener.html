@@ -277,14 +277,15 @@ function shade(hex, amt){ // amt -1..1
 // (projectpokemon.org) sends no Access-Control-Allow-Origin, so every sprite
 // downloaded and was then discarded by the browser. Every host below sends
 // Access-Control-Allow-Origin: *.
-const SPRITE_PATH = "sprites/pokemon/versions/generation-i/red-blue/transparent";
+const SPRITE_FILE = "sprites/pokemon/other/showdown/{id}.gif";
+const spritePath = id => SPRITE_FILE.replace("{id}", id);
 const SPRITE_HOSTS = [
   // jsdelivr first: three.js already loads from it, so it is known reachable.
-  id => "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/" + SPRITE_PATH + "/" + id + ".png",
-  id => "https://raw.githubusercontent.com/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png",
-  id => "https://cdn.statically.io/gh/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png",
+  id => "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/" + spritePath(id),
+  id => "https://raw.githubusercontent.com/PokeAPI/sprites/master/" + spritePath(id),
+  id => "https://cdn.statically.io/gh/PokeAPI/sprites/master/" + spritePath(id),
   id => "https://images.weserv.nl/?url=" + encodeURIComponent(
-          "raw.githubusercontent.com/PokeAPI/sprites/master/" + SPRITE_PATH + "/" + id + ".png")
+          "raw.githubusercontent.com/PokeAPI/sprites/master/" + spritePath(id))
 ];
 const SPRITE_IMAGES = {};
 const SPRITE_FAILURES = [];
@@ -320,23 +321,60 @@ function loadImageFrom(src, timeoutMs, useCors){
   });
 }
 
+// Normalize whatever we managed to load into one shape the card code can draw:
+// an atlas of n frames laid out in `cols` columns, with cumulative timings.
+// A bundled animated entry carries its own geometry. Anything else — a static
+// bundle, or a GIF pulled from a CDN, which a canvas only ever draws the first
+// frame of — becomes a single still frame, which the same code path handles.
+function makeSpriteRecord(img, entry){
+  if(entry && typeof entry === "object" && entry.n > 1){
+    const cum = []; let acc = 0;
+    for(let i=0;i<entry.d.length;i++){ acc += entry.d[i]; cum.push(acc); }
+    return {img, fw:entry.fw, fh:entry.fh, n:entry.n, cols:entry.cols, cum, total:acc};
+  }
+  return {img, fw:img.naturalWidth, fh:img.naturalHeight, n:1, cols:1, cum:[0], total:0};
+}
+
 async function loadSpriteImage(mon){
   const id = NUMBERS[mon.name];
   if(!id) return false;
   // Bundled sprites (sprites-data.js) skip the network entirely. A data: URI
   // never taints the canvas, so crossOrigin is neither needed nor wanted.
-  const bundled = window.SPRITE_DATA && window.SPRITE_DATA[id];
-  if(bundled){
-    const img = await loadImageFrom(bundled, 10000, false);
-    if(img){ SPRITE_IMAGES[mon.name] = img; return true; }
+  const entry = window.SPRITE_DATA && window.SPRITE_DATA[id];
+  if(entry){
+    const img = await loadImageFrom(typeof entry === "string" ? entry : entry.src, 10000, false);
+    if(img){ SPRITE_IMAGES[mon.name] = makeSpriteRecord(img, entry); return true; }
   }
   for(let i=0;i<SPRITE_HOSTS.length;i++){
     const url = SPRITE_HOSTS[i](id);
     const img = await loadImageFrom(url, 6000, true);
-    if(img){ SPRITE_IMAGES[mon.name] = img; return true; }
+    if(img){ SPRITE_IMAGES[mon.name] = makeSpriteRecord(img, null); return true; }
     if(i === SPRITE_HOSTS.length-1) SPRITE_FAILURES.push(mon.name + " -> " + url);
   }
   return false;
+}
+
+// Which frame of rec is showing at `ms` into its loop. n is at most a few
+// dozen, so a scan beats keeping a cursor per card.
+function spriteFrameAt(rec, ms){
+  if(rec.n <= 1 || !rec.total) return 0;
+  const x = ms % rec.total;
+  for(let i=0;i<rec.n;i++) if(x < rec.cum[i]) return i;
+  return rec.n - 1;
+}
+
+// Draw one atlas frame centred in the card's art window.
+function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
+  const pad = 10;
+  const boxW = artW - pad*2, boxH = artH - pad*2;
+  const scale = Math.min(boxW/rec.fw, boxH/rec.fh);
+  const dw = rec.fw*scale, dh = rec.fh*scale;
+  const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(rec.img, sx, sy, rec.fw, rec.fh,
+                artX + pad + (boxW-dw)/2, artY + pad + (boxH-dh)/2, dw, dh);
+  ctx.restore();
 }
 
 async function preloadSpriteImages(){
@@ -797,26 +835,33 @@ function buildCardFace(card){
   ctx.fillStyle=fg; ctx.fill();
   ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=2; ctx.stroke();
   ctx.restore();
-  // Use the actual Gen 1 (Red/Blue) sprite keyed by National Dex number.
-  // It is drawn into the existing art window so the card layout, holo
-  // mask, and Three.js flip/tilt behavior remain unchanged.
-  const sprite = SPRITE_IMAGES[mon.name];
-  if(sprite && sprite.complete && sprite.naturalWidth){
-    const pad = 10;
-    const boxX = artX + pad, boxY = artY + pad;
-    const boxW = artW - pad*2, boxH = artH - pad*2;
-    const scale = Math.min(boxW/sprite.naturalWidth, boxH/sprite.naturalHeight);
-    const dw = sprite.naturalWidth*scale, dh = sprite.naturalHeight*scale;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(sprite, boxX + (boxW-dw)/2, boxY + (boxH-dh)/2, dw, dh);
-    ctx.restore();
+  // The inner border is stroked before the art rather than after it, so that
+  // the animation plate below captures it. The sprite is inset by `pad` and
+  // never reached this border anyway, so nothing moves visually.
+  ctx.save(); ctx.strokeStyle="rgba(0,0,0,.3)"; ctx.lineWidth=2;
+  ctx.strokeRect(artX,artY,artW,artH); ctx.restore();
+  // Sprite art keyed by National Dex number, drawn into the existing art
+  // window so the card layout, holo mask, and Three.js flip/tilt behavior
+  // remain unchanged.
+  const rec = SPRITE_IMAGES[mon.name];
+  card.art = null;
+  if(rec && rec.img.complete && rec.img.naturalWidth){
+    if(rec.n > 1){
+      // Snapshot the empty art window once. Stepping a frame then repaints
+      // just this rect instead of rebuilding the whole 512x716 card face.
+      const plate = document.createElement("canvas");
+      plate.width = artW; plate.height = artH;
+      plate.getContext("2d").drawImage(c, artX, artY, artW, artH, 0, 0, artW, artH);
+      // Offset each card within its loop so ten cards in a pack don't all
+      // breathe in unison.
+      card.art = {x:artX, y:artY, w:artW, h:artH, plate, rec, frame:-1,
+                  phase: Math.random()*rec.total};
+    }
+    drawSpriteFrame(ctx, rec, 0, artX, artY, artW, artH);
   } else {
     // Only used if the sprite is missing (blocked host, or not yet loaded).
     drawCreature(ctx, artX, artY, artW, artH, mon);
   }
-  ctx.save(); ctx.strokeStyle="rgba(0,0,0,.3)"; ctx.lineWidth=2;
-  ctx.strokeRect(artX,artY,artW,artH); ctx.restore();
 
   // --- info strip ---
   ctx.fillStyle="rgba(0,0,0,.62)"; ctx.font="italic 12.5px "+CARD_FONT;
@@ -1240,6 +1285,21 @@ void main(){
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
+
+// Advance one card's sprite animation. Only the art window is repainted, and
+// only when the frame actually changes — GIF frames land around 10-20fps, so
+// this re-uploads the card texture far less often than once per rendered frame.
+function stepCardArt(card, tSeconds){
+  const a = card.art;
+  if(!a) return;
+  const f = spriteFrameAt(a.rec, tSeconds*1000 + a.phase);
+  if(f === a.frame) return;
+  a.frame = f;
+  const ctx = card.frontCanvas.getContext("2d");
+  ctx.drawImage(a.plate, a.x, a.y);
+  drawSpriteFrame(ctx, a.rec, f, a.x, a.y, a.w, a.h);
+  card.frontMat.uniforms.uMap.value.needsUpdate = true;
+}
 
 function makeCardMesh(card){
   const faces = buildCardFace(card);
@@ -1930,6 +1990,10 @@ function animate(){
 
   cards.forEach((card,i)=>{
     if(!card.pivot || !card.pivot.visible) return;
+    // Only the focused card shows its front; the rest of the stack sits behind
+    // it face-down. Stepping all ten would re-upload ten card textures a frame
+    // for art nobody can see.
+    if(i===index) stepCardArt(card, t);
     card.frontMat.uniforms.uTime.value = t;
     // a few degrees of wrist movement sweeps the whole pattern while the card
     // itself barely moves, which is how a real foil card behaves
