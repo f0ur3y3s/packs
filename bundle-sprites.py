@@ -214,8 +214,8 @@ def main():
                     help="skip the species metadata and artwork backdrops")
     ap.add_argument("--backdrop-size", type=int, default=192,
                     help="pixel size of each artwork backdrop (default: 192)")
-    ap.add_argument("--backdrop-blur", type=float, default=1.5,
-                    help="blur radius for the backdrop (default: 1.5)")
+    ap.add_argument("--backdrop-blur", type=float, default=2.5,
+                    help="blur radius for the backdrop (default: 2.5)")
     ap.add_argument("--workers", type=int, default=12, help="parallel downloads")
     ap.add_argument("--timeout", type=float, default=30.0, help="per-request timeout")
     args = ap.parse_args()

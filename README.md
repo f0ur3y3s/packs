@@ -110,8 +110,8 @@ metadata is absent.
   `genus`. Colour drives the card border and the panel tint, habitat picks the
   art-window gradient, and the genus replaces the fixed "Kanto Series" line.
   Type still owns the energy pips, glyphs and ink, so nothing semantic is lost.
-- **`other/official-artwork/{id}.png`** is downscaled to 192px, lightly blurred
-  and flattened to JPEG, then drawn under the sprite as a wash of that
+- **`other/official-artwork/{id}.png`** is downscaled to 192px, blurred and
+  flattened to JPEG, then drawn under the sprite as a wash of that
   Pokémon's own art. ~5 KB each. It is baked into the animation plate, so it
   costs nothing per frame.
 
