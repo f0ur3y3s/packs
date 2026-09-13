@@ -155,7 +155,8 @@
   #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(7,12,34,.975);backdrop-filter:blur(10px);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
   #binderDetail[hidden]{display:none}
-  #binderStage{width:min(78vw,360px);height:min(60vh,480px);touch-action:none;cursor:grab}
+  #binderStage{width:min(78vw,360px);height:min(56vh,460px);min-height:200px;flex:0 1 auto;
+    touch-action:none;cursor:grab}
   #binderStage:active{cursor:grabbing}
   #binderStage canvas{display:block;width:100%;height:100%}
   #binderActions{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
@@ -2749,6 +2750,7 @@ let binderView = null;
 function closeBinderCard(){
   if(!binderView) return;
   cancelAnimationFrame(binderView.raf);
+  if(binderView.onResize) window.removeEventListener("resize", binderView.onResize);
   const { renderer, pivot, card } = binderView;
   pivot.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
   // Only what this view made. The back material, its texture and the room map
@@ -2764,6 +2766,22 @@ function closeBinderCard(){
   renderer.dispose();
   if(renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
   binderView = null;
+}
+
+// Pull the camera back far enough for the whole card, derived rather than
+// guessed. The old value put it at 3.42, where a 36-degree vertical field shows
+// 2.22 units -- against a card 2.41 tall, so it was clipped top and bottom.
+// Fits width too, which is what bites on a short, wide stage.
+const BINDER_FIT = 1.28;      // headroom for the drift, the tilt and the shadow
+function frameBinderCard(camera, w, h){
+  const half = Math.tan(camera.fov * Math.PI/180 / 2);
+  const aspect = w/h;
+  camera.aspect = aspect;
+  camera.position.z = Math.max(
+    (CARD_MESH_H*BINDER_FIT/2) / half,
+    (CARD_MESH_W*BINDER_FIT/2) / (half*aspect)
+  );
+  camera.updateProjectionMatrix();
 }
 
 function openBinderCard(mon, finish){
@@ -2783,7 +2801,7 @@ function openBinderCard(mon, finish){
   const rim = new THREE.DirectionalLight(0xff7fd0, 0.45); rim.position.set(-3,-1,2); scene.add(rim);
 
   const camera = new THREE.PerspectiveCamera(36, w/h, 0.1, 100);
-  camera.position.z = CARD_MESH_H * 1.42;
+  frameBinderCard(camera, w, h);
 
   const card = {mon, stats: statsFor(mon), holo: finish};
   const pivot = makeCardMesh(card);
@@ -2804,6 +2822,13 @@ function openBinderCard(mon, finish){
   host.addEventListener("pointermove", e=>{ if(view.drag) set(e.clientX,e.clientY); });
   host.addEventListener("pointerup",   ()=>{ view.drag=false; });
   host.addEventListener("pointercancel",()=>{ view.drag=false; });
+
+  view.onResize = ()=>{
+    const nw = host.clientWidth || w, nh = host.clientHeight || h;
+    renderer.setSize(nw, nh, false);
+    frameBinderCard(camera, nw, nh);
+  };
+  window.addEventListener("resize", view.onResize);
 
   const clock = new THREE.Clock();
   (function tick(){
