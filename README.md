@@ -317,7 +317,14 @@ scanline alpha, repeat and overlay opacity in `crtOverlayTexture`.
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.
 - The pack renders immediately using fallback art and is rebuilt once sprites
   land — but only if it hasn't been torn open yet (`state === "idle" &&
-  tearProgress === 0`).
+  tearProgress === 0`). That rebuild is `newPack({silent:true})`: it skips the
+  drop-in tween, or the pack visibly zooms in a second time.
+- Audio reports itself. Browsers refuse to open an `AudioContext` before a
+  gesture and never say so, so a silent page looks identical to a working one.
+  The sound button turns red and reads `!` while the context is blocked, every
+  gesture retries the unlock (the old code latched after one failed attempt and
+  stayed silent for good), and `window.__audio()` returns
+  `{state, blocked, muted, plays, attempts, lastError}` from the console.
 - The holo shader is driven by the reflection vector, so the foil moves when
   the card does rather than animating on its own; `uTime` only adds a crawl.
   Highlights are additive over the art instead of mixing it toward flat

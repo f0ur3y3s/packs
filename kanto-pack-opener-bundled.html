@@ -67,6 +67,7 @@
     background:rgba(255,255,255,.06);color:var(--paper);font-size:16px;display:grid;place-items:center;backdrop-filter:blur(8px)}
   .iconbtn:active{transform:scale(.93)}
   .iconbtn.on{background:rgba(246,200,40,.20);border-color:rgba(246,200,40,.72);color:var(--gold-2)}
+  .iconbtn.warn{background:rgba(214,24,43,.22);border-color:rgba(214,24,43,.7);color:#ffb3ba}
 
   #bottom{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 20px);
     display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 18px}
@@ -1659,24 +1660,72 @@ function generatePack(){
    7. Audio
    ============================================================ */
 const Audio2 = (function(){
-  let ctx=null, muted=false, primed=false;
-  function ac(){ if(!ctx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); }
-    if(ctx && ctx.state==="suspended") ctx.resume(); return ctx; }
+  let ctx=null, muted=false;
+  // attempts counts unlock tries, not taps: one click fires pointerdown and
+  // mousedown, and the pack's own handler calls unlock() too.
+  let attempts=0, plays=0, lastError=null, announced=false;
+  const listeners=[];
+  const supported = Boolean(window.AudioContext || window.webkitAudioContext);
+
+  // Every state change is worth broadcasting: the sound button shows whether
+  // the browser actually let the context open, and on iOS that answer can
+  // change at any time (silent switch, a call, a backgrounded tab).
+  function notify(){
+    const st = status();
+    listeners.forEach(fn=>{ try { fn(st); } catch(e){} });
+    if(!announced && st.state === "running"){
+      announced = true;
+      console.info(`[audio] context running at ${ctx.sampleRate}Hz after ${attempts} unlock attempt(s).`);
+    }
+  }
+  function status(){
+    return {
+      supported,
+      state: supported ? (ctx ? ctx.state : "unopened") : "unsupported",
+      // "blocked" is the case worth showing: the user has interacted, and the
+      // browser still will not let the context run.
+      blocked: supported && attempts > 0 && Boolean(ctx) && ctx.state !== "running",
+      muted, plays, attempts, lastError
+    };
+  }
+  function ac(){
+    if(!ctx && supported){
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        ctx = new AC();
+        ctx.addEventListener?.("statechange", notify);
+      } catch(e){ lastError = String(e && e.message || e); notify(); return null; }
+    }
+    // resume() rejects when it is called outside a gesture, which is normal
+    // and not worth an unhandled rejection in the console.
+    if(ctx && ctx.state==="suspended") ctx.resume().catch(()=>{});
+    return ctx;
+  }
 
   // Safari needs more than resume(). It only honours resume() from inside a
   // gesture callstack, and until a source has actually been started the
   // context stays effectively mute — currentTime doesn't advance while it is
   // suspended, so anything scheduled against it just queues up. Starting one
   // silent frame during the first real gesture is what actually opens it.
+  //
+  // This runs on every gesture, not just the first. The old version latched a
+  // "primed" flag on the first attempt, so if that attempt happened to be
+  // refused — the usual case when the page is restored from the bfcache, or
+  // when the context was opened before a gesture existed — nothing ever tried
+  // again and the page stayed silent for the rest of its life.
   function prime(){
+    attempts++;
     const c = ac();
-    if(!c || primed) return;
-    primed = true;
+    if(!c){ notify(); return; }
+    if(c.state === "running"){ notify(); return; }
     try {
       const b = c.createBuffer(1, 1, c.sampleRate);
       const s = c.createBufferSource();
       s.buffer = b; s.connect(c.destination); s.start(0);
-    } catch(e){ primed = false; }
+    } catch(e){ lastError = String(e && e.message || e); }
+    // state settles asynchronously on Safari, so report after it has.
+    setTimeout(notify, 0);
+    notify();
   }
   // Catch the first gesture anywhere, not just the ones on the pack: the first
   // thing tapped might be the binder or the mute button.
@@ -1686,8 +1735,11 @@ const Audio2 = (function(){
   // Safari suspends the context when the tab goes to the background and does
   // not always bring it back on its own.
   document.addEventListener("visibilitychange", ()=>{
-    if(!document.hidden && ctx && ctx.state === "suspended") ctx.resume();
+    if(!document.hidden && ctx && ctx.state === "suspended"){ ctx.resume().catch(()=>{}); notify(); }
   });
+  // A page restored from the bfcache keeps its suspended context, and the
+  // gesture that restored it is long gone.
+  window.addEventListener("pageshow", e=>{ if(e.persisted) notify(); });
   function env(node,t0,a,d,peak){ const g=node.gain; g.setValueAtTime(0.0001,t0);
     g.exponentialRampToValueAtTime(peak,t0+a); g.exponentialRampToValueAtTime(0.0001,t0+a+d); }
   // Cache the decaying-noise buffers by duration. Filling one is a JS loop over
@@ -1709,25 +1761,40 @@ const Audio2 = (function(){
     }
     return bank[(Math.random()*bank.length)|0];
   }
-  function noise(dur,freq,q,vol){
+  // Everything that schedules a node goes through here, so one report covers
+  // the whole module: a sound that throws is counted once and named, rather
+  // than failing silently on every rip for the rest of the session.
+  function play(fn){
     const c=ac(); if(!c||muted) return;
-    const src=c.createBufferSource(); src.buffer=noiseBuffer(c, dur);
-    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq; bp.Q.value=q;
-    const g=c.createGain(); g.gain.value=vol;
-    src.connect(bp); bp.connect(g); g.connect(c.destination); src.start();
+    try { fn(c); plays++; }
+    catch(e){
+      const msg = String(e && e.message || e);
+      if(msg !== lastError){ lastError = msg; console.warn("[audio] " + msg); notify(); }
+    }
+  }
+  function noise(dur,freq,q,vol){
+    play(c=>{
+      const src=c.createBufferSource(); src.buffer=noiseBuffer(c, dur);
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=freq; bp.Q.value=q;
+      const g=c.createGain(); g.gain.value=vol;
+      src.connect(bp); bp.connect(g); g.connect(c.destination); src.start();
+    });
   }
   function tone(freq,t,dur,type,vol){
-    const c=ac(); if(!c||muted) return;
-    const o=c.createOscillator(); const g=c.createGain();
-    o.type=type||"triangle"; o.frequency.value=freq;
-    o.connect(g); g.connect(c.destination);
-    const t0=c.currentTime+t; env(g,t0,0.012,dur,vol||0.16);
-    o.start(t0); o.stop(t0+dur+0.06);
+    play(c=>{
+      const o=c.createOscillator(); const g=c.createGain();
+      o.type=type||"triangle"; o.frequency.value=freq;
+      o.connect(g); g.connect(c.destination);
+      const t0=c.currentTime+t; env(g,t0,0.012,dur,vol||0.16);
+      o.start(t0); o.stop(t0+dur+0.06);
+    });
   }
   return {
     unlock(){ prime(); },
-    setMuted(v){ muted=v; },
+    setMuted(v){ muted=v; notify(); },
     isMuted(){ return muted; },
+    status,
+    onChange(fn){ listeners.push(fn); fn(status()); },
     rip(intensity){ noise(0.09, 1400+Math.random()*2200, 1.4, 0.13*intensity); },
     bigRip(){ noise(0.55, 1100, 0.8, 0.3); noise(0.4, 2600, 1.2, 0.18); },
     flip(){ noise(0.06, 3200, 2.0, 0.10); tone(520,0,0.05,"square",0.05); },
@@ -3286,11 +3353,28 @@ if(tiltBtn && Motion.supported()){
 
 UI.sound.addEventListener("click", ()=>{
   Audio2.unlock();
-  const m = !Audio2.isMuted();
-  Audio2.setMuted(m);
-  UI.sound.textContent = m ? "✕" : "♪";
-  UI.sound.setAttribute("aria-label", m?"Unmute sound":"Mute sound");
+  Audio2.setMuted(!Audio2.isMuted());
 });
+// The button is the only place a silent page can explain itself. A browser
+// that refuses to open the audio context does so without an error anywhere, so
+// show that state rather than leaving a mute toggle that looks like it worked.
+Audio2.onChange(st=>{
+  const blocked = st.blocked || !st.supported;
+  UI.sound.textContent = st.muted ? "✕" : blocked ? "!" : "♪";
+  UI.sound.classList.toggle("warn", blocked && !st.muted);
+  UI.sound.setAttribute("aria-label",
+    !st.supported ? "This browser has no Web Audio support" :
+    st.muted      ? "Unmute sound" :
+    blocked       ? "Sound is blocked by the browser — tap to retry" :
+                    "Mute sound");
+  UI.sound.title = st.muted ? "Muted" :
+    !st.supported ? "No Web Audio in this browser" :
+    blocked ? `Audio context ${st.state}${st.lastError ? " — " + st.lastError : ""}` :
+    st.state === "running" ? "Sound on" : "Sound on (tap anywhere to start audio)";
+});
+// One line, on demand, for "I can't hear anything" — no need to reconstruct
+// the state from the UI.
+window.__audio = () => Audio2.status();
 
 
 /* ============================================================
