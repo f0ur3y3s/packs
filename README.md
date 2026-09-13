@@ -140,6 +140,25 @@ Rough sizes: showdown at 30 frames is ~4.1 MB across 151 sheets; `gen1` stills
 are ~128 KB. Since the bundle loads in the background, its size costs you how
 long the fallback art is on screen, not how long the page takes to start.
 
+## Deploying
+
+Published with GitHub Pages, which works whichever source the repository is set
+to — worth knowing, because the two modes behave differently:
+
+- **Source: a branch.** GitHub serves the repository root. `.nojekyll` stops it
+  publishing `README.md` as the site, and the root `index.html` redirects to the
+  app. `three.min.js` and `sprites-data.js` sit alongside, so they resolve.
+- **Source: GitHub Actions.** `.github/workflows/pages.yml` lays the same files
+  into `_site`, publishing the app as `index.html` directly (no redirect) and
+  the self-contained copy as `standalone.html`.
+
+Both can be active at once: the built-in branch builder still runs while the
+workflow does, and whichever finishes last wins. That is why the root has to
+serve the app on its own rather than relying on the workflow.
+
+Serving over https also sidesteps the `file://` restrictions that stop Safari
+loading sibling scripts locally.
+
 ## Binder
 
 Every card is recorded the moment it is turned over, not when the pack is

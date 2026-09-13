@@ -29,6 +29,11 @@ jobs:
 
       # sprites-data.js and three.min.js are committed, so there is nothing to
       # build and no network needed here: just lay the files out for serving.
+      #
+      # If the repository's Pages source is a branch rather than Actions, the
+      # built-in Jekyll builder runs alongside this and whichever finishes last
+      # wins. The repo root carries .nojekyll and an index.html redirect so the
+      # app is served either way.
       - name: Assemble site
         run: |
           mkdir -p _site
