@@ -1,4 +1,5 @@
 node_modules/
-# Build artifact: regenerate with
-#   python3 bundle-sprites.py --gen1 --inline kanto-pack-opener.html
-kanto-pack-opener-bundled.html
+# kanto-pack-opener-bundled.html is generated, but it is committed on purpose:
+# it is the copy that works when opened straight off the disk, with no sibling
+# files and no network. Regenerate with:
+#   python3 bundle-sprites.py --inline kanto-pack-opener.html

@@ -2084,8 +2084,18 @@ loadSpriteData()
     if(startApp() || loading) return;
     if(sourceIndex>=SOURCES.length){
       progress(100,"The 3D engine could not be loaded.");
+      // Opened straight off the disk, the usual cause is not the network: the
+      // page is on its own, without the three.min.js sitting next to it. Say
+      // so, rather than sending people to check a connection that is fine.
+      var local = location.protocol === "file:";
+      var why = local
+        ? "three.min.js wasn’t found next to this file, and no CDN could be reached."
+        : "All Three.js sources failed.";
+      var fix = local
+        ? "Open <b>kanto-pack-opener-bundled.html</b> instead — it has the engine and all the art inline and needs nothing beside it. Otherwise keep <b>three.min.js</b> and <b>sprites-data.js</b> in the same folder as this page."
+        : "Check your internet connection and reload.";
       var b=document.getElementById("boot");
-      if(b) b.innerHTML='<div class="bootbox"><b>Couldn’t load the 3D engine</b><div style="margin-top:8px">All Three.js sources failed. Check your internet connection and reload.</div><button class="cta" style="margin-top:18px" onclick="location.reload()">Retry</button></div>';
+      if(b) b.innerHTML='<div class="bootbox"><b>Couldn’t load the 3D engine</b><div style="margin-top:8px">'+why+'</div><div style="margin-top:10px;opacity:.85">'+fix+'</div><button class="cta" style="margin-top:18px" onclick="location.reload()">Retry</button></div>';
       return;
     }
     loading=true;

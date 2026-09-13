@@ -5,24 +5,31 @@ through ten cards rendered as WebGL-textured 3D meshes with a custom holo shader
 
 ## Running it
 
-No build step and no dependencies. Either:
+No build step and no dependencies.
+
+**Opening it straight off the disk:** use `kanto-pack-opener-bundled.html`. The
+engine and all 151 animated sprites are inline, so it needs no sibling files and
+no network — double-click it and it runs.
+
+**Working on it:** serve the directory, so `kanto-pack-opener.html` can pick up
+`three.min.js` and `sprites-data.js` next to it.
 
 ```sh
 python3 -m http.server
 # then open http://localhost:8000/kanto-pack-opener.html
 ```
 
-…or open `kanto-pack-opener.html` directly. Keep `sprites-data.js` and
-`three.min.js` next to it. Nothing here touches the network at runtime — the
-engine and the art are both local.
-
-For a single file with nothing alongside it at all, see `--inline` below.
+`kanto-pack-opener.html` opened over `file://` works too, but only with those
+two files beside it — on its own it has no engine to start, and says so. Some
+browsers are also stricter than Chrome about loading sibling scripts over
+`file://`. The bundled copy sidesteps both problems, which is why it exists.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `kanto-pack-opener.html` | The app. `bootPackOpener()` is in the first `<script>`; a shim in the second loads three.js r128 from a CDN list and calls it. |
+| `kanto-pack-opener.html` | The app. `bootPackOpener()` is in the first `<script>`; a shim at the end loads three.js and calls it. Needs the two files below beside it. |
+| `kanto-pack-opener-bundled.html` | Generated, but committed: the same app with the engine and art inline. The copy to open locally or upload to a static host. |
 | `sprites-data.js` | The 151 animated sprite sheets as base64 data URIs, with frame timings. Generated — do not edit. |
 | `three.min.js` | Vendored three.js r128. Tried before any CDN, so the app works offline. |
 | `bundle-sprites.py` | Regenerates `sprites-data.js`. |
