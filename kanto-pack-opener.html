@@ -1293,9 +1293,35 @@ function generatePack(){
    7. Audio
    ============================================================ */
 const Audio2 = (function(){
-  let ctx=null, muted=false;
-  function ac(){ if(!ctx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); } 
+  let ctx=null, muted=false, primed=false;
+  function ac(){ if(!ctx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); }
     if(ctx && ctx.state==="suspended") ctx.resume(); return ctx; }
+
+  // Safari needs more than resume(). It only honours resume() from inside a
+  // gesture callstack, and until a source has actually been started the
+  // context stays effectively mute — currentTime doesn't advance while it is
+  // suspended, so anything scheduled against it just queues up. Starting one
+  // silent frame during the first real gesture is what actually opens it.
+  function prime(){
+    const c = ac();
+    if(!c || primed) return;
+    primed = true;
+    try {
+      const b = c.createBuffer(1, 1, c.sampleRate);
+      const s = c.createBufferSource();
+      s.buffer = b; s.connect(c.destination); s.start(0);
+    } catch(e){ primed = false; }
+  }
+  // Catch the first gesture anywhere, not just the ones on the pack: the first
+  // thing tapped might be the binder or the mute button.
+  ["pointerdown","touchstart","mousedown","keydown"].forEach(ev=>{
+    window.addEventListener(ev, prime, {capture:true, once:false, passive:true});
+  });
+  // Safari suspends the context when the tab goes to the background and does
+  // not always bring it back on its own.
+  document.addEventListener("visibilitychange", ()=>{
+    if(!document.hidden && ctx && ctx.state === "suspended") ctx.resume();
+  });
   function env(node,t0,a,d,peak){ const g=node.gain; g.setValueAtTime(0.0001,t0);
     g.exponentialRampToValueAtTime(peak,t0+a); g.exponentialRampToValueAtTime(0.0001,t0+a+d); }
   // Cache the decaying-noise buffers by duration. Filling one is a JS loop over
@@ -1333,7 +1359,7 @@ const Audio2 = (function(){
     o.start(t0); o.stop(t0+dur+0.06);
   }
   return {
-    unlock(){ ac(); },
+    unlock(){ prime(); },
     setMuted(v){ muted=v; },
     isMuted(){ return muted; },
     rip(intensity){ noise(0.09, 1400+Math.random()*2200, 1.4, 0.13*intensity); },
@@ -1412,7 +1438,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.72));
 const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(2.5,4,5); scene.add(key);
 const rim = new THREE.DirectionalLight(0xff7fd0, 0.45); rim.position.set(-3,-1,2); scene.add(rim);
 
-const CARD_MESH_W = 1.72, CARD_MESH_H = CARD_MESH_W*(CARD_H/CARD_W), CARD_MESH_D = 0.014;
+const CARD_MESH_W = 1.72, CARD_MESH_H = CARD_MESH_W*(CARD_H/CARD_W), CARD_MESH_D = 0.019;
 
 function fitCamera(){
   const w = window.innerWidth, h = window.innerHeight;
@@ -1453,12 +1479,41 @@ varying vec2 vUv; varying vec3 vN; varying vec3 vP;
 
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 
+// The art window in UV space: x 42..470 of 512, y 136..422 of 716 measured
+// down the canvas, so v runs the other way.
+const vec2 ART0 = vec2(0.0820, 0.4106);
+const vec2 ART1 = vec2(0.9180, 0.8101);
+
 void main(){
-  vec4 base = texture2D(uMap, vUv);
-  vec3 col = base.rgb;
   vec3 N = normalize(vN);
   vec3 V = normalize(-vP);
   float facing = clamp(dot(N,V),0.0,1.0);
+  vec3 Rv = reflect(-V, N);
+
+  // Parallax on the art window only. Shifting what is sampled inside the
+  // window against the frame around it makes the art sit behind the card
+  // surface instead of printed on it -- the single strongest depth cue here,
+  // because it is motion the frame does not share. Clamped so a shifted
+  // sample can never reach outside the window and drag frame pixels in.
+  vec2 uvS = vUv;
+  float inArt = step(ART0.x, vUv.x) * step(vUv.x, ART1.x)
+              * step(ART0.y, vUv.y) * step(vUv.y, ART1.y);
+  if(inArt > 0.5){
+    vec2 par = vec2(Rv.x, Rv.y) * 0.0135 + uTilt * 0.0045;
+    uvS = clamp(vUv + par, ART0 + 0.0018, ART1 - 0.0018);
+  }
+  vec4 base = texture2D(uMap, uvS);
+  vec3 col = base.rgb;
+
+  // Inner shadow around the window, deepest on the side the light comes from,
+  // which is what a recess actually does.
+  vec2 dIn = min(vUv - ART0, ART1 - vUv);
+  float lipX = 1.0 - smoothstep(0.0, 0.030, dIn.x);
+  float lipY = 1.0 - smoothstep(0.0, 0.022, dIn.y);
+  float lip = max(lipX, lipY) * inArt;
+  vec2 lightDir = normalize(vec2(-0.5, 0.86) + vec2(uTilt.y, -uTilt.x)*0.5);
+  float side = 0.5 + 0.5*dot(normalize((vUv - 0.5) + vec2(1e-5)), lightDir);
+  col *= 1.0 - lip*(0.10 + 0.24*side);
 
   // Faint edge sheen. This used to be 0.13 and lifted the whole card toward
   // white; foil should catch light, not glow.
@@ -1493,8 +1548,7 @@ void main(){
     // moves when the card does. The old version swept on uTime alone, which
     // is the main reason a resting card looked fake: real foil is still when
     // you are still. Time is left in at a crawl so it never looks frozen.
-    vec3 R = reflect(-V, N);
-    vec2 r = vec2(R.x + uTilt.x*0.55, R.y + uTilt.y*0.55);
+    vec2 r = vec2(Rv.x + uTilt.x*0.55, Rv.y + uTilt.y*0.55);
 
     // Diffraction: hue depends on angle across the sheet, not on screen
     // position alone, so tilting cycles the colours instead of sliding a
@@ -1595,6 +1649,61 @@ function sharedBackMaterial(){
   return backMat;
 }
 
+// A real card is a rounded slab with a soft edge, not a box. The sharp corners
+// were a big part of why it read as flat: the silhouette gave it away before
+// any shading did. ExtrudeGeometry gives rounded corners and a bevelled rim
+// that catches the light all the way round.
+//
+// Two things have to be rebuilt afterwards. Extrude generates its own UVs from
+// the shape outline, which do not map a card face, so they are recomputed from
+// x/y across the card. And it groups both caps together, while the front and
+// back need different materials, so the triangles are regrouped by facing.
+function buildCardGeometry(w, h, d, r){
+  const shape = new THREE.Shape();
+  const x = -w/2, y = -h/2;
+  shape.moveTo(x+r, y);
+  shape.lineTo(x+w-r, y);   shape.quadraticCurveTo(x+w, y,   x+w, y+r);
+  shape.lineTo(x+w, y+h-r); shape.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  shape.lineTo(x+r, y+h);   shape.quadraticCurveTo(x, y+h,   x, y+h-r);
+  shape.lineTo(x, y+r);     shape.quadraticCurveTo(x, y,     x+r, y);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: d, bevelEnabled: true,
+    bevelThickness: d*0.32, bevelSize: d*0.32, bevelOffset: 0,
+    bevelSegments: 2, curveSegments: 9
+  });
+  geo.center();
+  geo.computeVertexNormals();
+
+  const pos = geo.attributes.position, nor = geo.attributes.normal;
+  const uv = new Float32Array(pos.count*2);
+  for(let i=0;i<pos.count;i++){
+    let u = (pos.getX(i) + w/2) / w;
+    const v = (pos.getY(i) + h/2) / h;
+    // The back faces the other way, so its texture has to be mirrored or the
+    // card back comes out reversed.
+    if(nor.getZ(i) < -0.6) u = 1 - u;
+    uv[i*2] = u; uv[i*2+1] = v;
+  }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+
+  geo.clearGroups();
+  const tris = pos.count/3;
+  const faceOf = t => {
+    let nz = 0;
+    for(let k=0;k<3;k++) nz += nor.getZ(t*3+k);
+    nz /= 3;
+    return nz > 0.6 ? 0 : nz < -0.6 ? 1 : 2;   // front, back, rim
+  };
+  let runStart = 0, runMat = faceOf(0);
+  for(let t=1;t<tris;t++){
+    const m = faceOf(t);
+    if(m !== runMat){ geo.addGroup(runStart*3, (t-runStart)*3, runMat); runMat = m; runStart = t; }
+  }
+  geo.addGroup(runStart*3, (tris-runStart)*3, runMat);
+  return geo;
+}
+
 function makeCardMesh(card){
   const faces = buildCardFace(card);
   card.frontCanvas = faces.front;
@@ -1625,8 +1734,11 @@ function makeCardMesh(card){
     card.artTex.minFilter = THREE.LinearFilter; card.artTex.generateMipmaps = false;
   }
 
-  const geo = new THREE.BoxGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D);
-  const mesh = new THREE.Mesh(geo, [edgeMat,edgeMat,edgeMat,edgeMat,frontMat,backMat]);
+  // Corner radius matched to the 30px radius the card face is drawn with, so
+  // the mesh silhouette lines up with the artwork's own rounded corners.
+  const geo = buildCardGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D,
+                                CARD_MESH_W * (30/CARD_W));
+  const mesh = new THREE.Mesh(geo, [frontMat, backMat, edgeMat]);
   const pivot = new THREE.Group();
   pivot.add(mesh);
   card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
@@ -1955,6 +2067,8 @@ function dealCards(){
 
 /* ---------- flip / advance ---------- */
 let tilt = {x:0,y:0,tx:0,ty:0};
+// Counter-rotation applied to device tilt, in radians at full sweep.
+const FLOAT_TILT = 0.46, FLOAT_SHIFT = 0.085;
 
 /* ============================================================
    Binder — what you have pulled, kept in localStorage
@@ -2503,10 +2617,23 @@ function animate(){
     // itself barely moves, which is how a real foil card behaves
     // dragging up leans the top edge away from you, as if pushing the far
     // edge back — the inverse reads as the card falling toward you
-    card.frontMat.uniforms.uTilt.value.set(mo.y*1.7, mo.x*1.7);
+    // Device tilt is applied inverted. Turning the phone used to turn the card
+    // with it, which reads as the card being stuck to the screen. Countering
+    // the rotation instead holds the card still in the world while the phone
+    // moves around it, so it reads as floating in place.
+    card.frontMat.uniforms.uTilt.value.set(-mo.y*1.7, -mo.x*1.7);
     if(i===index && state==="viewing" && card.revealed){
-      card.pivot.rotation.y = tilt.y + mo.y*0.16;
-      card.pivot.rotation.x = tilt.x + mo.x*0.16;
+      // FLOAT_TILT is in radians at full sweep, matched to Motion's own RANGE
+      // (32 degrees = 0.56 rad) so the counter-rotation tracks the device close
+      // to one-to-one. Slightly under, which keeps it stable rather than
+      // feeling like the card is fighting you.
+      card.pivot.rotation.y = tilt.y - mo.y*FLOAT_TILT;
+      card.pivot.rotation.x = tilt.x - mo.x*FLOAT_TILT;
+      // A little counter-translation as well: a fixed object seen from a
+      // moving viewpoint shifts as well as turns, and without it the card
+      // reads as pivoting on a pin.
+      card.pivot.position.x = -mo.y*FLOAT_SHIFT;
+      card.pivot.position.y =  mo.x*FLOAT_SHIFT;
     } else if(i===index && state==="viewing" && !card.flipped){
       card.pivot.rotation.y = Math.PI + tilt.y + Math.sin(t*0.9)*0.03;
       card.pivot.rotation.x = Math.sin(t*0.7)*0.02;
