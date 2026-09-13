@@ -140,6 +140,32 @@ Rough sizes: showdown at 30 frames is ~4.1 MB across 151 sheets; `gen1` stills
 are ~128 KB. Since the bundle loads in the background, its size costs you how
 long the fallback art is on screen, not how long the page takes to start.
 
+## Binder
+
+Every card is recorded the moment it is turned over, not when the pack is
+finished, so closing the tab halfway through keeps what you already saw. The
+store is `localStorage` under `kanto.binder.v1`:
+
+```
+{ v:1, packs, pulls, cards: { "<dex>": { n, best, first } } }
+```
+
+`best` is the best finish ever pulled for that slot (`none` < `reverse` <
+`rare`), so pulling a plain copy later cannot downgrade a holo you own. Writes
+are batched to one per tick because pulls arrive in bursts as a pack is flipped
+through.
+
+Every read and write is wrapped: `localStorage` throws outright in Safari's
+private mode. The binder then runs in memory for the session and says so in its
+header rather than failing.
+
+The grid is all 151 slots in dex order — caught ones in colour, the rest as
+silhouettes. Thumbnails are CSS backgrounds over the sprite sheet sized to show
+frame 0, so 151 of them cost no canvases. Opening a slot rebuilds the full card
+through the same `buildCardFace` the pack uses; `statsFor` is seeded from the
+Pokémon's name, so the card is identical to the one pulled and nothing about it
+needs storing.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.

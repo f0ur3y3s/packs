@@ -99,6 +99,41 @@
   .tag.t{color:#131033;background:var(--foil)}
   #summary .row.foot{gap:10px}
   #summary .cta{flex:1}
+  /* ---- binder ---- */
+  #binder{position:fixed;inset:0;z-index:22;background:rgba(9,7,24,.96);backdrop-filter:blur(14px);
+    display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 18px) 14px calc(env(safe-area-inset-bottom) + 14px)}
+  #binder.on{display:flex}
+  #binder .bhead{align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+  #binder h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+  #binder .lede{margin:5px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+  #binderGrid{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:grid;gap:8px;
+    grid-template-columns:repeat(auto-fill,minmax(86px,1fr));
+    /* Fixed row height rather than aspect-ratio: with fractional column widths
+       every row rounded to a slightly different height and the grid looked
+       misaligned. */
+    grid-auto-rows:106px;align-content:start;padding-bottom:14px}
+  .slot{position:relative;border-radius:8px;background:#171241;border:1px solid rgba(255,255,255,.07);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;
+    padding-bottom:13px;cursor:default;transition:transform .12s ease,border-color .12s ease}
+  .slot.own{background:linear-gradient(160deg,#241c58,#181246);border-color:rgba(255,255,255,.14);cursor:pointer}
+  .slot.own:active{transform:scale(.96)}
+  .slot .art{image-rendering:pixelated;background-repeat:no-repeat;flex:0 0 auto}
+  .slot.miss .art{filter:brightness(0) opacity(.30)}
+  .slot .no{position:absolute;top:3px;left:5px;font-size:8.5px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.04em}
+  .slot .nm{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;font-weight:700;
+    color:rgba(255,255,255,.72);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .slot .dup{position:absolute;top:3px;right:4px;font-size:8.5px;font-weight:800;color:#131033;
+    background:rgba(255,255,255,.82);border-radius:999px;padding:1px 4px}
+  .slot.holo{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 18px -8px rgba(255,209,92,.65)}
+  .slot.rev{border-color:var(--foil);box-shadow:0 0 0 1px var(--foil)}
+  #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(9,7,24,.97);backdrop-filter:blur(10px);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
+  #binderDetail[hidden]{display:none}
+  #binderDetail img{max-width:min(74vw,340px);max-height:62vh;border-radius:11px;
+    box-shadow:0 26px 60px -22px rgba(0,0,0,.9)}
+  #binderDetail .meta{text-align:center;color:var(--muted);font-size:12.5px;line-height:1.65}
+  #binderDetail .meta b{color:var(--paper);font-size:15px;display:block;margin-bottom:3px}
+  #binderEmpty{color:var(--muted);font-size:13px;line-height:1.6;padding:8px 2px}
   @media (prefers-reduced-motion: reduce){*{transition-duration:.01ms !important}}
 </style>
 </head>
@@ -111,6 +146,7 @@
     <div class="wordmark">KANTO SERIES<span>10 CARDS PER PACK</span></div>
     <div style="display:flex;gap:8px">
       <button class="iconbtn" id="tiltbtn" aria-label="Use phone tilt for the holo shine" hidden>✦</button>
+      <button class="iconbtn" id="binderbtn" aria-label="Open your binder">▦</button>
       <button class="iconbtn" id="sound" aria-label="Mute sound">♪</button>
     </div>
   </div>
@@ -134,8 +170,21 @@
   <p class="lede" id="sumLede"></p>
   <div id="grid"></div>
   <div class="row foot">
+    <button class="cta ghost" id="binderFromSummary">Binder</button>
     <button class="cta" id="again">Open another pack</button>
   </div>
+</div>
+
+<div id="binder">
+  <div class="row bhead">
+    <div>
+      <h2>Binder</h2>
+      <p class="lede" id="binderStats"></p>
+    </div>
+    <button class="iconbtn" id="binderClose" aria-label="Close the binder">✕</button>
+  </div>
+  <div id="binderGrid"></div>
+  <div id="binderDetail" hidden></div>
 </div>
 
 <div id="boot"><div class="bootbox"><b id="bootTitle">Loading the pack…</b><div id="bootStatus">Getting the 3D engine ready.</div><div class="bootbar"><i id="bootProgress"></i></div><div id="bootPercent">0%</div></div></div>
@@ -206,6 +255,9 @@ function parseDex(str, rarity){
   });
 }
 const POOL = {C:parseDex(DEX.C,"C"), U:parseDex(DEX.U,"U"), R:parseDex(DEX.R,"R")};
+// Name -> entry, so the binder can rebuild a card it has only a count for.
+const MON_BY_NAME = {};
+["C","U","R"].forEach(t=>POOL[t].forEach(m=>{ MON_BY_NAME[m.name]=m; }));
 // Real National Dex order — also used to resolve {id} in an art URL template.
 const DEX_ORDER = ("Bulbasaur,Ivysaur,Venusaur,Charmander,Charmeleon,Charizard,Squirtle,Wartortle,Blastoise,"+
 "Caterpie,Metapod,Butterfree,Weedle,Kakuna,Beedrill,Pidgey,Pidgeotto,Pidgeot,Rattata,Raticate,Spearow,Fearow,"+
@@ -1712,6 +1764,13 @@ const UI = {
   summary: document.getElementById("summary"),
   grid: document.getElementById("grid"),
   sumLede: document.getElementById("sumLede"),
+  binder: document.getElementById("binder"),
+  binderGrid: document.getElementById("binderGrid"),
+  binderStats: document.getElementById("binderStats"),
+  binderDetail: document.getElementById("binderDetail"),
+  binderBtn: document.getElementById("binderbtn"),
+  binderClose: document.getElementById("binderClose"),
+  binderFromSummary: document.getElementById("binderFromSummary"),
   again: document.getElementById("again"),
   sound: document.getElementById("sound")
 };
@@ -1897,6 +1956,178 @@ function dealCards(){
 /* ---------- flip / advance ---------- */
 let tilt = {x:0,y:0,tx:0,ty:0};
 
+/* ============================================================
+   Binder — what you have pulled, kept in localStorage
+   ============================================================ */
+// Every read and write is guarded: localStorage throws outright in Safari's
+// private mode and can be disabled entirely. The binder degrades to
+// in-memory-only rather than taking the app down with it.
+const Binder = (function(){
+  const KEY = "kanto.binder.v1";
+  const RANK = {none:0, reverse:1, rare:2};
+  let data = {v:1, packs:0, pulls:0, cards:{}};
+  let usable = true;
+
+  function load(){
+    try {
+      const raw = localStorage.getItem(KEY);
+      if(raw){
+        const d = JSON.parse(raw);
+        if(d && d.v === 1 && d.cards) data = d;
+      }
+    } catch(e){
+      usable = false;
+      console.warn("[binder] storage unavailable, collection won't persist:", e && e.message);
+    }
+  }
+  let saveQueued = false;
+  function save(){
+    // Pulls arrive in bursts as a pack is flipped through; write once per tick.
+    if(!usable || saveQueued) return;
+    saveQueued = true;
+    setTimeout(()=>{
+      saveQueued = false;
+      try { localStorage.setItem(KEY, JSON.stringify(data)); }
+      catch(e){ usable = false; console.warn("[binder] save failed:", e && e.message); }
+    }, 0);
+  }
+
+  load();
+  return {
+    // One pulled card. `finish` is "none" | "reverse" | "rare"; a slot keeps
+    // the best finish ever pulled for it, so a later plain copy can't
+    // downgrade a holo you already own.
+    record(mon, finish){
+      const id = NUMBERS[mon.name];
+      if(!id) return;
+      const c = data.cards[String(id)] || {n:0, best:"none", first:0};
+      c.n++;
+      if(RANK[finish] > RANK[c.best]) c.best = finish;
+      if(!c.first) c.first = Date.now();
+      data.cards[String(id)] = c;
+      data.pulls++;
+      save();
+    },
+    countPack(){ data.packs++; save(); },
+    get(id){ return data.cards[String(id)] || null; },
+    stats(){
+      const owned = Object.keys(data.cards).length;
+      let holo = 0, rev = 0;
+      for(const k in data.cards){
+        if(data.cards[k].best === "rare") holo++;
+        else if(data.cards[k].best === "reverse") rev++;
+      }
+      return {owned, total:DEX_ORDER.length, packs:data.packs, pulls:data.pulls, holo, rev, usable};
+    }
+  };
+})();
+
+// Frame 0 of a sprite sheet as a CSS background, so 151 thumbnails cost no
+// canvases: size the element to one cell and let background-size scale the
+// whole sheet around it.
+function spriteThumbStyle(id, box){
+  const e = window.SPRITE_DATA && window.SPRITE_DATA[id];
+  if(!e) return null;
+  const fw = e.fw || 0, fh = e.fh || 0;
+  if(typeof e === "string" || !fw) return {src:(e.src||e), plain:true};
+  const k = Math.min(box/fw, box/fh);
+  const rows = Math.ceil(e.n / e.cols);
+  return {
+    w: Math.round(fw*k), h: Math.round(fh*k),
+    bg: `url(${e.src})`,
+    size: `${Math.round(e.cols*fw*k)}px ${Math.round(rows*fh*k)}px`
+  };
+}
+
+function renderBinder(){
+  const grid = UI.binderGrid;
+  const st = Binder.stats();
+  const pct = Math.round(st.owned/st.total*100);
+  UI.binderStats.innerHTML =
+    `<b style="color:var(--paper)">${st.owned}/${st.total}</b> collected · ${pct}% · ` +
+    `${st.packs} pack${st.packs===1?"":"s"} opened · ${st.pulls} card${st.pulls===1?"":"s"} pulled` +
+    (st.holo ? ` · ${st.holo} holo` : "") +
+    (st.usable ? "" : `<br><span style="color:#ffb4a1">Storage is unavailable, so this won't be saved.</span>`);
+
+  const frag = document.createDocumentFragment();
+  DEX_ORDER.forEach((name, i)=>{
+    const id = i+1;
+    const have = Binder.get(id);
+    const slot = document.createElement("div");
+    slot.className = "slot " + (have ? "own" : "miss")
+      + (have && have.best==="rare" ? " holo" : have && have.best==="reverse" ? " rev" : "");
+    const no = document.createElement("span");
+    no.className = "no"; no.textContent = String(id).padStart(3,"0");
+    slot.appendChild(no);
+
+    const art = document.createElement("div");
+    art.className = "art";
+    const t = spriteThumbStyle(id, 46);
+    if(t && !t.plain){
+      art.style.width = t.w+"px"; art.style.height = t.h+"px";
+      art.style.backgroundImage = t.bg; art.style.backgroundSize = t.size;
+      art.style.backgroundPosition = "0 0";
+    } else if(t && t.plain){
+      art.style.width = art.style.height = "46px";
+      art.style.backgroundImage = `url(${t.src})`;
+      art.style.backgroundSize = "contain";
+    }
+    slot.appendChild(art);
+
+    if(have){
+      const nm = document.createElement("span");
+      nm.className = "nm"; nm.textContent = name;
+      slot.appendChild(nm);
+      if(have.n > 1){
+        const d = document.createElement("span");
+        d.className = "dup"; d.textContent = "x"+have.n;
+        slot.appendChild(d);
+      }
+      slot.addEventListener("click", ()=>{ Audio2.tap(); showBinderDetail(id, name, have); });
+    }
+    frag.appendChild(slot);
+  });
+  grid.innerHTML = "";
+  grid.appendChild(frag);
+}
+
+function showBinderDetail(id, name, have){
+  const meta = window.SPRITE_META && window.SPRITE_META[id];
+  const d = UI.binderDetail;
+  d.innerHTML = "";
+  // Draw the card itself rather than storing an image per pull: the binder
+  // keeps counts, and the face is cheap to rebuild from the same code the
+  // pack uses.
+  const mon = MON_BY_NAME[name];
+  if(mon){
+    const faces = buildCardFace({mon, stats:statsFor(mon), holo:have.best});
+    const img = document.createElement("img");
+    img.alt = name;
+    try { img.src = faces.front.toDataURL("image/png"); d.appendChild(img); } catch(e){}
+  }
+  const info = document.createElement("div");
+  info.className = "meta";
+  const when = have.first ? new Date(have.first).toLocaleDateString() : "";
+  info.innerHTML = `<b>${name}</b>No. ${String(id).padStart(3,"0")}`
+    + (meta && meta.genus ? ` · ${meta.genus}` : "")
+    + `<br>${have.n} pulled${when ? " · first on "+when : ""}`
+    + (have.best!=="none" ? `<br><span style="color:${have.best==="rare"?"var(--gold)":"var(--foil)"}">`
+        + (have.best==="rare"?"Holo":"Reverse holo") + ` copy in the binder</span>` : "");
+  d.appendChild(info);
+  const close = document.createElement("button");
+  close.className = "cta ghost"; close.textContent = "Back to the binder";
+  close.addEventListener("click", ()=>{ Audio2.tap(); d.hidden = true; });
+  d.appendChild(close);
+  d.hidden = false;
+}
+
+function openBinder(){
+  renderBinder();
+  UI.binderDetail.hidden = true;
+  UI.binder.classList.add("on");
+}
+function closeBinder(){ UI.binder.classList.remove("on"); }
+
 function flipCurrent(){
   const card = cards[index];
   if(!card || card.flipped) return;
@@ -1912,6 +2143,7 @@ function flipCurrent(){
     if(!celebrated && k>0.55 && card.holo!=="none"){ celebrated=true; celebrate(card); }
   }, easeInOut, ()=>{
     card.revealed=true;
+    Binder.record(card.mon, card.holo);
     card.frontMat.uniforms.uHolo.value = card.holo==="none"?0:1;
     Motion.recentre();
     updatePips();
@@ -1972,6 +2204,7 @@ function nextCard(){
 /* ---------- summary ---------- */
 function showSummary(){
   packsOpened++;
+  Binder.countPack();
   renderSummary();
 }
 function renderSummary(){
@@ -2113,6 +2346,14 @@ UI.action.addEventListener("click", ()=>{
 });
 
 UI.again.addEventListener("click", ()=>{ Audio2.tap(); newPack(); });
+UI.binderBtn.addEventListener("click", ()=>{ Audio2.tap(); openBinder(); });
+UI.binderClose.addEventListener("click", ()=>{ Audio2.tap(); closeBinder(); });
+UI.binderFromSummary.addEventListener("click", ()=>{ Audio2.tap(); openBinder(); });
+window.addEventListener("keydown", e=>{
+  if(e.key !== "Escape") return;
+  if(!UI.binder.classList.contains("on")) return;
+  if(!UI.binderDetail.hidden) UI.binderDetail.hidden = true; else closeBinder();
+});
 const Motion = (function(){
   let enabled=false, receiving=false, base=null;
   let tx=0, ty=0, cx=0, cy=0;
