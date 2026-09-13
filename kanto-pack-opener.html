@@ -222,6 +222,40 @@ const DEX_ORDER = ("Bulbasaur,Ivysaur,Venusaur,Charmander,Charmeleon,Charizard,S
 const NUMBERS = {};
 DEX_ORDER.forEach((n,i)=>{ NUMBERS[n] = i+1; });
 
+// PokeAPI reports a canonical colour per species. Six type colours across 151
+// cards made every pack look the same; these ten give the border real variety
+// while the type still owns the pips, glyphs and ink.
+const SPECIES_PALETTE = {
+  black: {c:"#4a4a55", d:"#1c1c22"},  blue:  {c:"#3d7fe0", d:"#12386f"},
+  brown: {c:"#a9773f", d:"#5e3d17"},  gray:  {c:"#9aa0ab", d:"#4d525c"},
+  green: {c:"#56b45c", d:"#1f5c2c"},  pink:  {c:"#ec7fb0", d:"#8c3462"},
+  purple:{c:"#9a5cc4", d:"#4f216e"},  red:   {c:"#e04a3c", d:"#801a12"},
+  white: {c:"#d9dde4", d:"#8d929c"},  yellow:{c:"#eec033", d:"#8a6404"}
+};
+// Habitat tints the art window, so a cave Pokemon doesn't sit on the same
+// gold plate as a sea one. Three stops: top, middle, bottom.
+const HABITAT_GROUNDS = {
+  cave:           ["#8d8598","#5f5768","#3f3947"],
+  forest:         ["#cfe0a8","#8fae6b","#5d7a44"],
+  grassland:      ["#f6e9b8","#d9c37e","#f0e2ad"],
+  mountain:       ["#d8d2c6","#a09689","#6d655c"],
+  rare:           ["#e6d2f5","#b184d8","#6b449b"],
+  "rough-terrain":["#e2cba8","#b4906a","#7b5f42"],
+  sea:            ["#bfe3f2","#6fb0d6","#336f9c"],
+  urban:          ["#dedfe3","#adb0ba","#787c88"],
+  "waters-edge":  ["#cdeee2","#82c4b2","#48897a"]
+};
+const DEFAULT_GROUND = HABITAT_GROUNDS.grassland;
+const SPRITE_BACKDROPS = {};
+
+// Everything the card draws from real PokeAPI data, or null when the bundle
+// has no metadata (the card then looks exactly as it did before).
+function speciesMeta(mon){
+  const id = NUMBERS[mon.name];
+  const m = window.SPRITE_META && window.SPRITE_META[id];
+  return m || null;
+}
+
 const MOVES = {
   G:["Vine Lash","Spore Cloud","Razor Frond","Sap Drain","Pollen Burst","Tangle Up","Seed Shot"],
   R:["Ember Toss","Flare Up","Heat Wave","Cinder Rush","Blaze Kick","Scorch","Fire Fang"],
@@ -345,6 +379,13 @@ function makeSpriteRecord(img, entry){
 async function loadSpriteImage(mon){
   const id = NUMBERS[mon.name];
   if(!id) return false;
+  // Blurred wash from the official artwork. It sits behind the sprite and is
+  // baked into the animation plate, so it costs nothing per frame.
+  const meta = window.SPRITE_META && window.SPRITE_META[id];
+  if(meta && meta.bg && !SPRITE_BACKDROPS[mon.name]){
+    const bg = await loadImageFrom(meta.bg, 10000, false);
+    if(bg) SPRITE_BACKDROPS[mon.name] = bg;
+  }
   // Bundled sprites (sprites-data.js) skip the network entirely. A data: URI
   // never taints the canvas, so crossOrigin is neither needed nor wanted.
   const entry = window.SPRITE_DATA && window.SPRITE_DATA[id];
@@ -782,8 +823,12 @@ function buildCardFace(card){
   const artX=42, artY=136, artW=CARD_W-84, artH=286;
 
   // --- border ---
+  // Species colour where there is one, type colour otherwise. The type still
+  // owns the pips, glyphs and ink, so nothing semantic is lost.
+  const meta = speciesMeta(mon);
+  const A = (meta && SPECIES_PALETTE[meta.color]) || {c:T.c, d:T.d};
   const bg = ctx.createLinearGradient(0,0,CARD_W,CARD_H);
-  bg.addColorStop(0, shade(T.c,.34)); bg.addColorStop(.5, T.c); bg.addColorStop(1, T.d);
+  bg.addColorStop(0, shade(A.c,.34)); bg.addColorStop(.5, A.c); bg.addColorStop(1, A.d);
   rr(ctx,0,0,CARD_W,CARD_H,R); ctx.fillStyle=bg; ctx.fill();
   // border texture
   ctx.save(); rr(ctx,0,0,CARD_W,CARD_H,R); ctx.clip();
@@ -795,7 +840,10 @@ function buildCardFace(card){
   const P=18;
   rr(ctx,P,P,CARD_W-P*2,CARD_H-P*2,R-9);
   const inner=ctx.createLinearGradient(0,P,0,CARD_H-P);
-  inner.addColorStop(0,"#fbfaf6"); inner.addColorStop(1, shade(T.light,.42));
+  // Tint the panel toward the species colour too, or a purple-framed card ends
+  // up with a green panel. Shaded well toward white so the type's dark ink
+  // keeps its contrast whatever the species colour is.
+  inner.addColorStop(0,"#fbfaf6"); inner.addColorStop(1, shade(A.c,.78));
   ctx.fillStyle=inner; ctx.fill();
   ctx.strokeStyle="rgba(0,0,0,.22)"; ctx.lineWidth=2; ctx.stroke();
 
@@ -837,11 +885,33 @@ function buildCardFace(card){
   // --- art window ---
   ctx.save();
   rr(ctx,artX-6,artY-6,artW+12,artH+12,10);
+  const ground = (meta && HABITAT_GROUNDS[meta.habitat]) || DEFAULT_GROUND;
   const fg=ctx.createLinearGradient(artX,artY,artX+artW,artY+artH);
-  fg.addColorStop(0,"#f6e9b8"); fg.addColorStop(.5,"#d9c37e"); fg.addColorStop(1,"#f0e2ad");
+  fg.addColorStop(0,ground[0]); fg.addColorStop(.5,ground[1]); fg.addColorStop(1,ground[2]);
   ctx.fillStyle=fg; ctx.fill();
   ctx.strokeStyle="rgba(0,0,0,.35)"; ctx.lineWidth=2; ctx.stroke();
   ctx.restore();
+
+  // Wash of that Pokemon's own artwork over the habitat ground. Scaled to
+  // cover and clipped to the window; it is blurred and semi-transparent, so it
+  // reads as depth behind the sprite rather than a second picture.
+  const backdrop = SPRITE_BACKDROPS[mon.name];
+  if(backdrop && backdrop.complete && backdrop.naturalWidth){
+    const cover = Math.max(artW/backdrop.naturalWidth, artH/backdrop.naturalHeight);
+    const bw = backdrop.naturalWidth*cover, bh = backdrop.naturalHeight*cover;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(backdrop, artX+(artW-bw)/2, artY+(artH-bh)/2, bw, bh);
+    ctx.globalAlpha = 1;
+    // Settle the middle so the sprite always has something to read against.
+    const vig = ctx.createRadialGradient(artX+artW/2, artY+artH/2, artH*0.12,
+                                         artX+artW/2, artY+artH/2, artH*0.72);
+    vig.addColorStop(0, "rgba(255,255,255,.30)");
+    vig.addColorStop(1, "rgba(0,0,0,.16)");
+    ctx.fillStyle = vig; ctx.fillRect(artX,artY,artW,artH);
+    ctx.restore();
+  }
   // The inner border is stroked before the art rather than after it, so that
   // the animation plate below captures it. The sprite is inset by `pad` and
   // never reached this border anyway, so nothing moves visually.
@@ -872,7 +942,8 @@ function buildCardFace(card){
 
   // --- info strip ---
   ctx.fillStyle="rgba(0,0,0,.62)"; ctx.font="italic 12.5px "+CARD_FONT;
-  ctx.fillText(`No. ${String(NUMBERS[mon.name]).padStart(3,"0")}   ·   ${T.name} type   ·   Kanto Series`, 44, artY+artH+26);
+  const tail = (meta && meta.genus) || "Kanto Series";
+  ctx.fillText(`No. ${String(NUMBERS[mon.name]).padStart(3,"0")}   ·   ${T.name} type   ·   ${tail}`, 44, artY+artH+26);
 
   // --- attacks ---
   let y = artY+artH+52;

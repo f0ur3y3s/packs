@@ -98,6 +98,30 @@ static first frame**, since nothing has decoded them. If every host fails the
 card degrades to the built-in `drawCreature` art. That degradation is silent by
 design, so watch the console: the loader logs `[art] N/151 sprites …` every run.
 
+### Card theming
+
+Flat type colours across 151 cards made every pack look alike, so two more
+PokeAPI sources feed the card design. Both live in `window.SPRITE_META`
+alongside the sprite sheets, and the card falls back to its old look if the
+metadata is absent.
+
+- **`pokeapi.co/api/v2/pokemon-species/{id}`** gives each Pokémon's canonical
+  `color` (ten of them, against six types), its `habitat`, and its real
+  `genus`. Colour drives the card border and the panel tint, habitat picks the
+  art-window gradient, and the genus replaces the fixed "Kanto Series" line.
+  Type still owns the energy pips, glyphs and ink, so nothing semantic is lost.
+- **`other/official-artwork/{id}.png`** is downscaled to 96px, blurred and
+  flattened to JPEG, then drawn under the sprite as a soft wash of that
+  Pokémon's own art. ~1 KB each, ~200 KB for all 151. It is baked into the
+  animation plate, so it costs nothing per frame.
+
+`--no-extras` skips both; `--backdrop-size` changes the wash resolution.
+
+There is no general-purpose "background API" worth wiring up here. The obvious
+candidate for real card art, pokemontcg.io, was returning 500s and connection
+failures when this was written, and it serves whole card images rather than
+backgrounds.
+
 ### Regenerating
 
 ```sh

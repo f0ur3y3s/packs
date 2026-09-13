@@ -48,6 +48,9 @@ SETS = {
 
 # jsdelivr first: the page already loads three.js from it, so it is known
 # reachable wherever the opener runs.
+SPECIES_API = "https://pokeapi.co/api/v2/pokemon-species/{id}"
+ARTWORK = "sprites/pokemon/other/official-artwork/{id}.png"
+
 HOSTS = (
     "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/{path}",
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/{path}",
@@ -144,6 +147,55 @@ def to_sheet(data, max_frames):
     return buf.getvalue(), {"fw": fw, "fh": fh, "n": n, "cols": cols, "d": kept_delays}
 
 
+def fetch_species(dex_id, timeout):
+    """Canonical colour, habitat and genus for one dex number, from PokeAPI."""
+    url = SPECIES_API.format(id=dex_id)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "bundle-sprites/2.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return dex_id, None, f"{url}: {exc}"
+    genus = next((g["genus"] for g in d.get("genera", [])
+                  if g.get("language", {}).get("name") == "en"), "")
+    return dex_id, {
+        "color": (d.get("color") or {}).get("name") or "",
+        "habitat": (d.get("habitat") or {}).get("name") or "",
+        "genus": genus,
+        "rare": bool(d.get("is_legendary") or d.get("is_mythical")),
+    }, None
+
+
+def fetch_backdrop(dex_id, timeout, size, blur):
+    """A small blurred wash from the official artwork, for behind the sprite.
+
+    Flattened onto a neutral ground and saved as JPEG: it sits underneath an
+    opaque card panel, so there is no transparency worth the bytes.
+    """
+    from PIL import Image, ImageFilter
+
+    path = ARTWORK.format(id=dex_id)
+    last = None
+    for host in HOSTS:
+        url = host.format(path=path)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "bundle-sprites/2.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            art = Image.open(io.BytesIO(raw)).convert("RGBA")
+            flat = Image.new("RGB", art.size, (222, 214, 196))
+            flat.paste(art, (0, 0), art)
+            small = flat.resize((size, size), Image.LANCZOS).filter(
+                ImageFilter.GaussianBlur(blur))
+            buf = io.BytesIO()
+            small.save(buf, "JPEG", quality=72, optimize=True)
+            return dex_id, ("data:image/jpeg;base64,"
+                            + base64.b64encode(buf.getvalue()).decode("ascii")), None
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            last = f"{url}: {exc}"
+    return dex_id, None, last
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -158,6 +210,10 @@ def main():
                     help="also write a self-contained copy of this HTML file")
     ap.add_argument("--three", default="three.min.js",
                     help="engine to inline alongside the sprites (default: three.min.js)")
+    ap.add_argument("--no-extras", action="store_true",
+                    help="skip the species metadata and artwork backdrops")
+    ap.add_argument("--backdrop-size", type=int, default=96,
+                    help="pixel size of each blurred backdrop (default: 96)")
     ap.add_argument("--workers", type=int, default=12, help="parallel downloads")
     ap.add_argument("--timeout", type=float, default=30.0, help="per-request timeout")
     args = ap.parse_args()
@@ -199,13 +255,39 @@ def main():
         if not sprites:
             return 1
 
+    meta = {}
+    if not args.no_extras:
+        print("\nFetching species metadata and artwork backdrops ...", file=sys.stderr)
+        with futures.ThreadPoolExecutor(max_workers=min(args.workers, 8)) as pool:
+            sp = [pool.submit(fetch_species, i, args.timeout) for i in range(1, COUNT + 1)]
+            bd = [pool.submit(fetch_backdrop, i, args.timeout,
+                              args.backdrop_size, max(1, args.backdrop_size // 32))
+                  for i in range(1, COUNT + 1)]
+            for job in futures.as_completed(sp):
+                dex_id, info, err = job.result()
+                if info:
+                    meta.setdefault(dex_id, {}).update(info)
+                else:
+                    failures.append(f"#{dex_id} species: {err}")
+            for job in futures.as_completed(bd):
+                dex_id, uri, err = job.result()
+                if uri:
+                    meta.setdefault(dex_id, {})["bg"] = uri
+                else:
+                    failures.append(f"#{dex_id} backdrop: {err}")
+        withbg = sum(1 for m in meta.values() if m.get("bg"))
+        print(f"  {len(meta)} with metadata, {withbg} with a backdrop", file=sys.stderr)
+
     payload = json.dumps({str(k): sprites[k] for k in sorted(sprites)},
                          separators=(",", ":"))
+    meta_payload = json.dumps({str(k): meta[k] for k in sorted(meta)},
+                              separators=(",", ":"))
     kind = "animated sprite sheets" if animated else "stills"
     js = ("// Generated by bundle-sprites.py -- do not edit.\n"
           f"// {len(sprites)}/{COUNT} Kanto sprites from the '{args.art}' set as {kind}.\n"
           "// Art from https://github.com/PokeAPI/sprites\n"
-          f"window.SPRITE_DATA = {payload};\n")
+          f"window.SPRITE_DATA = {payload};\n"
+          + (f"window.SPRITE_META = {meta_payload};\n" if meta else ""))
 
     out = pathlib.Path(args.out)
     out.write_text(js, encoding="utf-8")
