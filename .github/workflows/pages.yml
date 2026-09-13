@@ -1,0 +1,45 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/kanto-pack-opener-handoff-gp56i4
+  workflow_dispatch:
+
+# Allow the workflow to publish to Pages via OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # sprites-data.js and three.min.js are committed, so there is nothing to
+      # build and no network needed here: just lay the files out for serving.
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp kanto-pack-opener.html          _site/index.html
+          cp three.min.js sprites-data.js    _site/
+          cp kanto-pack-opener-bundled.html  _site/standalone.html
+          ls -la _site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
