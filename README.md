@@ -110,12 +110,14 @@ metadata is absent.
   `genus`. Colour drives the card border and the panel tint, habitat picks the
   art-window gradient, and the genus replaces the fixed "Kanto Series" line.
   Type still owns the energy pips, glyphs and ink, so nothing semantic is lost.
-- **`other/official-artwork/{id}.png`** is downscaled to 96px, blurred and
-  flattened to JPEG, then drawn under the sprite as a soft wash of that
-  Pokémon's own art. ~1 KB each, ~200 KB for all 151. It is baked into the
-  animation plate, so it costs nothing per frame.
+- **`other/official-artwork/{id}.png`** is downscaled to 192px, lightly blurred
+  and flattened to JPEG, then drawn under the sprite as a wash of that
+  Pokémon's own art. ~5 KB each. It is baked into the animation plate, so it
+  costs nothing per frame.
 
-`--no-extras` skips both; `--backdrop-size` changes the wash resolution.
+`--no-extras` skips both. `--backdrop-size` and `--backdrop-blur` control how
+sharp the wash is; they are independent, so resolution can go up without the
+blur following it.
 
 There is no general-purpose "background API" worth wiring up here. The obvious
 candidate for real card art, pokemontcg.io, was returning 500s and connection
@@ -144,5 +146,15 @@ long the fallback art is on screen, not how long the page takes to start.
 - The pack renders immediately using fallback art and is rebuilt once sprites
   land — but only if it hasn't been torn open yet (`state === "idle" &&
   tearProgress === 0`).
-- The holo effect is a custom shader driven by `uTime` / `uTilt` from `animate()`.
+- The holo shader is driven by the reflection vector, so the foil moves when
+  the card does rather than animating on its own; `uTime` only adds a crawl.
+  Highlights are additive over the art instead of mixing it toward flat
+  rainbow, and a specular lobe gates both the sheen and the sparkle so a card
+  held flat-on isn't covered in speckles.
+- Sprites are drawn at a whole-pixel scale. At a fractional one, nearest-
+  neighbour gave some source rows 3 screen pixels and others 4, which read as
+  ragged edges.
+- The card's side faces take their colour from its own border. They were an
+  unlit near-white, which rendered brighter than the shaded front and ringed
+  every card in white.
 - Sprite animation is driven from the same `cards.forEach` loop in `animate()`.

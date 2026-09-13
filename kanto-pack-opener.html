@@ -227,10 +227,13 @@ DEX_ORDER.forEach((n,i)=>{ NUMBERS[n] = i+1; });
 // while the type still owns the pips, glyphs and ink.
 const SPECIES_PALETTE = {
   black: {c:"#4a4a55", d:"#1c1c22"},  blue:  {c:"#3d7fe0", d:"#12386f"},
-  brown: {c:"#a9773f", d:"#5e3d17"},  gray:  {c:"#9aa0ab", d:"#4d525c"},
+  brown: {c:"#a9773f", d:"#5e3d17"},  gray:  {c:"#7f8794", d:"#3a3f49"},
   green: {c:"#56b45c", d:"#1f5c2c"},  pink:  {c:"#ec7fb0", d:"#8c3462"},
   purple:{c:"#9a5cc4", d:"#4f216e"},  red:   {c:"#e04a3c", d:"#801a12"},
-  white: {c:"#d9dde4", d:"#8d929c"},  yellow:{c:"#eec033", d:"#8a6404"}
+  // white and gray are deliberately darker than the name suggests: at their
+  // literal values the frame vanished into the near-white panel and the card
+  // read as one pale slab.
+  white: {c:"#b9c1d0", d:"#646b7a"},  yellow:{c:"#eec033", d:"#8a6404"}
 };
 // Habitat tints the art window, so a cave Pokemon doesn't sit on the same
 // gold plate as a sea one. Three stops: top, middle, bottom.
@@ -415,7 +418,11 @@ function spriteFrameAt(rec, ms){
 function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   const pad = 10;
   const boxW = artW - pad*2, boxH = artH - pad*2;
-  const scale = Math.min(boxW/rec.fw, boxH/rec.fh);
+  // Snap to a whole-pixel multiple. At a fractional scale nearest-neighbour
+  // gives some source rows 3 screen pixels and others 4, which reads as a
+  // ragged, shimmering edge on the sprite.
+  let scale = Math.min(boxW/rec.fw, boxH/rec.fh);
+  if(scale > 1) scale = Math.floor(scale);
   const dw = rec.fw*scale, dh = rec.fh*scale;
   const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
   ctx.save();
@@ -813,7 +820,7 @@ function raritySymbol(ctx,x,y,r,rarity,holo){
   ctx.restore();
 }
 
-// Returns {front:canvas, mask:canvas}
+// Returns {front:canvas, mask:canvas, edge:css colour for the card's sides}
 function buildCardFace(card){
   const mon = card.mon, T = TYPES[mon.type], st = card.stats;
   const c = document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
@@ -901,7 +908,7 @@ function buildCardFace(card){
     const bw = backdrop.naturalWidth*cover, bh = backdrop.naturalHeight*cover;
     ctx.save();
     ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.62;
     ctx.drawImage(backdrop, artX+(artW-bw)/2, artY+(artH-bh)/2, bw, bh);
     ctx.globalAlpha = 1;
     // Settle the middle so the sprite always has something to read against.
@@ -1011,7 +1018,7 @@ function buildCardFace(card){
     mc.fillRect(artX*s, artY*s, artW*s, artH*s);
     mc.restore();
   }
-  return {front:c, mask:m};
+  return {front:c, mask:m, edge:shade(A.d,-0.25)};
 }
 
 let BACK_CANVAS = null;
@@ -1338,28 +1345,45 @@ void main(){
   vec3 V = normalize(-vP);
   float facing = clamp(dot(N,V),0.0,1.0);
 
-  // gentle sheen on every card so it reads as a physical card
-  col += pow(1.0-facing, 3.0) * 0.13;
+  // Faint edge sheen. This used to be 0.13 and lifted the whole card toward
+  // white; foil should catch light, not glow.
+  col += pow(1.0-facing, 4.0) * 0.045;
 
   float m = texture2D(uMask, vUv).r * uHolo;
   if(m > 0.003){
+    // Everything below is driven by the reflection vector, so the foil only
+    // moves when the card does. The old version swept on uTime alone, which
+    // is the main reason a resting card looked fake: real foil is still when
+    // you are still. Time is left in at a crawl so it never looks frozen.
     vec3 R = reflect(-V, N);
-    float px = R.x + uTilt.x, py = R.y + uTilt.y;
-    float p = vUv.x*2.4 + vUv.y*4.2 + px*5.5 + py*4.0 + uTime*0.18;
-    vec3 rb = 0.5 + 0.5*cos(6.28318*(p + vec3(0.0,0.33,0.67)));
-    rb = mix(rb, mix(rb, vec3(1.0,0.78,0.32), 0.65), uGold);
+    vec2 r = vec2(R.x + uTilt.x*0.55, R.y + uTilt.y*0.55);
 
-    float band = 0.5 + 0.5*sin(6.28318*(vUv.y*1.8 - px*2.6 + uTime*0.12));
-    float strength = 0.40 + 0.60*smoothstep(0.1,1.0,band);
+    // Diffraction: hue depends on angle across the sheet, not on screen
+    // position alone, so tilting cycles the colours instead of sliding a
+    // fixed gradient around.
+    float d = (vUv.x-0.5)*1.1 + (vUv.y-0.5)*1.9 + r.x*3.4 + r.y*2.6 + uTime*0.015;
+    vec3 rb = 0.5 + 0.5*cos(6.28318*(d + vec3(0.0,0.33,0.67)));
+    rb = mix(rb, mix(rb, vec3(1.0,0.82,0.38), 0.7), uGold);
 
-    vec2 g = floor(vUv*vec2(86.0,120.0));
+    // Specular lobe: bright near the mirror angle, almost nothing away from
+    // it. This is what makes the sheet light up as it passes through an angle.
+    float lobe = pow(clamp(1.0 - length(r)*0.78, 0.0, 1.0), 2.2);
+
+    // Fine grating lines, swept by the same vector.
+    float lines = 0.5 + 0.5*sin(6.28318*((vUv.y*1.35 - vUv.x*0.55)*8.0 - (r.x+r.y)*4.5));
+    float grate = mix(0.72, 1.0, lines);
+
+    // Additive rather than mixing the art toward flat rainbow, so the
+    // illustration stays legible under the foil.
+    float amt = m * (0.14 + 0.86*lobe) * grate;
+    col += rb * amt * 0.62;
+
+    // Sparkle, gated by the lobe so a card held flat-on isn't covered in
+    // white speckles.
+    vec2 g = floor(vUv*vec2(104.0,146.0));
     float rv = h21(g);
-    float twinkle = step(0.90, fract(rv*7.13 + px*0.55 + py*0.42 + uTime*0.06));
-    float sparkle = twinkle * smoothstep(0.55,1.0,band);
-
-    col = mix(col, col*0.55 + rb*0.85, m*strength*0.78);
-    col += rb*sparkle*m*0.85;
-    col += m*pow(1.0-facing,2.0)*0.18;
+    float tw = step(0.952, fract(rv*7.13 + r.x*0.8 + r.y*0.6));
+    col += rb * tw * m * lobe * 0.75;
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -1398,7 +1422,10 @@ function makeCardMesh(card){
   const backTex = new THREE.CanvasTexture(buildCardBack());
   backTex.minFilter = THREE.LinearFilter; backTex.generateMipmaps = false;
   const backMat = new THREE.MeshBasicMaterial({map:backTex});
-  const edgeMat = new THREE.MeshBasicMaterial({color:0xf2efe6});
+  // The sides used to be unlit near-white (#f2efe6), so they rendered brighter
+  // than the shaded front and ringed every card in glowing white. Use the
+  // card's own dark border tone, which reads as the printed edge of card stock.
+  const edgeMat = new THREE.MeshBasicMaterial({color: new THREE.Color(faces.edge || "#6b6459")});
 
   const geo = new THREE.BoxGeometry(CARD_MESH_W, CARD_MESH_H, CARD_MESH_D);
   const mesh = new THREE.Mesh(geo, [edgeMat,edgeMat,edgeMat,edgeMat,frontMat,backMat]);

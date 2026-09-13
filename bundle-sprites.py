@@ -188,7 +188,7 @@ def fetch_backdrop(dex_id, timeout, size, blur):
             small = flat.resize((size, size), Image.LANCZOS).filter(
                 ImageFilter.GaussianBlur(blur))
             buf = io.BytesIO()
-            small.save(buf, "JPEG", quality=72, optimize=True)
+            small.save(buf, "JPEG", quality=80, optimize=True)
             return dex_id, ("data:image/jpeg;base64,"
                             + base64.b64encode(buf.getvalue()).decode("ascii")), None
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -212,8 +212,10 @@ def main():
                     help="engine to inline alongside the sprites (default: three.min.js)")
     ap.add_argument("--no-extras", action="store_true",
                     help="skip the species metadata and artwork backdrops")
-    ap.add_argument("--backdrop-size", type=int, default=96,
-                    help="pixel size of each blurred backdrop (default: 96)")
+    ap.add_argument("--backdrop-size", type=int, default=192,
+                    help="pixel size of each artwork backdrop (default: 192)")
+    ap.add_argument("--backdrop-blur", type=float, default=1.5,
+                    help="blur radius for the backdrop (default: 1.5)")
     ap.add_argument("--workers", type=int, default=12, help="parallel downloads")
     ap.add_argument("--timeout", type=float, default=30.0, help="per-request timeout")
     args = ap.parse_args()
@@ -261,7 +263,7 @@ def main():
         with futures.ThreadPoolExecutor(max_workers=min(args.workers, 8)) as pool:
             sp = [pool.submit(fetch_species, i, args.timeout) for i in range(1, COUNT + 1)]
             bd = [pool.submit(fetch_backdrop, i, args.timeout,
-                              args.backdrop_size, max(1, args.backdrop_size // 32))
+                              args.backdrop_size, args.backdrop_blur)
                   for i in range(1, COUNT + 1)]
             for job in futures.as_completed(sp):
                 dex_id, info, err = job.result()
