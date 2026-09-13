@@ -286,6 +286,27 @@ Gold is the action colour, so the primary button, the active filter chip, the
 tilt toggle and the current pip all read as the same affordance. The wordmark
 carries a small CSS ball, the same mark as the pack and the card back.
 
+## The art window as a screen
+
+The sprites are 31x29 to 217x181 and get upscaled 1.5x to 8x into the art
+window, so they are unavoidably chunky. Rather than fight that, the window is
+treated as a small CRT.
+
+- **Dithering.** `drawHabitatScene` finishes by banding the scene to six levels
+  with a 4x4 Bayer threshold. Smooth vector gradients behind hard pixel art were
+  most of why the sprites read as the wrong resolution rather than as a style;
+  quantising the scene puts both on the same footing, and it is what the
+  hardware these sprites come from actually did. Applied last, so every layer is
+  quantised together rather than each one separately.
+- **Scanlines and grille.** A 3x6 tiling texture on a third quad, in front of
+  the sprite — a scanline that stops at the Pokémon is not a scanline, it is a
+  background. The repeat is whole numbers (143 x 20): a fractional repeat under
+  a nearest filter makes some lines a pixel thicker than their neighbours, which
+  reads as moiré rather than as a screen.
+
+Both are tunable in one place each — the level count in `ditherRegion`, and the
+scanline alpha, repeat and overlay opacity in `crtOverlayTexture`.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.

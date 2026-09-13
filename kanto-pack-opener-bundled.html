@@ -410,6 +410,29 @@ function ridge(ctx, x, y, w, h, top, amp, step, fill){
   ctx.closePath();
   ctx.fillStyle = fill; ctx.fill();
 }
+// 4x4 Bayer ordered dither. The habitat scenes are smooth gradients sitting
+// behind hard pixel art, which is most of why the sprites read as the wrong
+// resolution rather than as a style. Banding the scene to a small number of
+// levels with a threshold pattern puts both on the same footing -- and it is
+// what the hardware these sprites come from actually did.
+const BAYER4 = [ 0, 8, 2,10, 12, 4,14, 6, 3,11, 1, 9, 15, 7,13, 5];
+function ditherRegion(ctx, x, y, w, h, levels){
+  const img = ctx.getImageData(x, y, w, h);
+  const d = img.data, step = 255/(levels-1);
+  for(let py=0; py<h; py++){
+    for(let px=0; px<w; px++){
+      const i = (py*w + px)*4;
+      // Bayer value as a signed fraction of one quantisation step.
+      const t = (BAYER4[(py & 3)*4 + (px & 3)]/16 - 0.5) * step;
+      for(let ch=0; ch<3; ch++){
+        const v = d[i+ch] + t;
+        d[i+ch] = Math.max(0, Math.min(255, Math.round(v/step)*step));
+      }
+    }
+  }
+  ctx.putImageData(img, x, y);
+}
+
 function drawHabitatScene(ctx, habitat, name, x, y, w, h){
   const S = SCENES[habitat] || SCENES.grassland;
   const rnd = mulberry32(hashStr(name + "·scene"));
@@ -449,6 +472,10 @@ function drawHabitatScene(ctx, habitat, name, x, y, w, h){
   pop.addColorStop(1, "rgba(0,0,0,0.16)");
   ctx.fillStyle = pop; ctx.fillRect(x,y,w,h);
   ctx.restore();
+
+  // Banded last, so everything above -- sky ramp, terrain, the centre lift --
+  // is quantised together rather than dithering each layer separately.
+  ditherRegion(ctx, x, y, w, h, 6);
 }
 
 // Everything the card draws from real PokeAPI data, or null when the bundle
@@ -2083,12 +2110,12 @@ function buildCardGeometry(w, h, d, r){
 // is what gives the sprite real depth: it is physically nearer the camera than
 // the scene behind it, so it parallaxes against the frame on its own rather
 // than through a UV trick, and it catches the light separately.
-function buildSpriteQuad(){
+function buildSpriteQuad(lift){
   const qw = CARD_MESH_W * (428/CARD_W), qh = CARD_MESH_H * (286/CARD_H);
   const offY = (0.5 - (136 + 286/2)/CARD_H) * CARD_MESH_H;
   const geo = new THREE.PlaneGeometry(qw, qh, 14, 10);
   const pos = geo.attributes.position;
-  const lift = CARD_MESH_D*0.5 + 0.011;
+  lift = CARD_MESH_D*0.5 + lift;
   for(let i=0;i<pos.count;i++){
     // Vertices are quad-local; the bow is defined across the whole card.
     const cardX = pos.getX(i), cardY = pos.getY(i) + offY;
@@ -2099,6 +2126,37 @@ function buildSpriteQuad(){
   geo.computeVertexNormals();
   geo.translate(0, offY, 0);
   return geo;
+}
+
+// The glass the art is seen through: scanlines, an aperture grille and a
+// little vertical bloom. Tiled, so one small texture serves every card, and it
+// sits in front of the sprite rather than behind it -- a scanline that stops at
+// the Pokemon is not a scanline, it is a background.
+let crtTex = null;
+function crtOverlayTexture(){
+  if(crtTex) return crtTex;
+  const T = 6;                                   // one scanline pair
+  const c = document.createElement("canvas"); c.width = 3; c.height = T;
+  const x = c.getContext("2d");
+  x.clearRect(0,0,3,T);
+  // Scanline: darken the lower half of each pair, softened at its edge.
+  x.fillStyle = "rgba(0,0,0,0.28)"; x.fillRect(0, T/2, 3, T/2);
+  x.fillStyle = "rgba(0,0,0,0.14)"; x.fillRect(0, T/2 - 1, 3, 1);
+  // Aperture grille: one column per primary, very light, so it tints rather
+  // than stripes.
+  ["rgba(255,64,64,0.10)","rgba(64,255,96,0.10)","rgba(80,120,255,0.10)"]
+    .forEach((col,i)=>{ x.fillStyle = col; x.fillRect(i, 0, 1, T); });
+  crtTex = new THREE.CanvasTexture(c);
+  crtTex.wrapS = crtTex.wrapT = THREE.RepeatWrapping;
+  crtTex.magFilter = THREE.NearestFilter;
+  crtTex.minFilter = THREE.LinearFilter;
+  crtTex.generateMipmaps = false;
+  // Whole numbers of tiles. A fractional repeat with a nearest filter makes
+  // some scanlines a pixel thicker than their neighbours, which reads as moire
+  // rather than as a screen. Twenty pairs down the window is about right --
+  // fewer, heavier lines look more like a CRT than many fine ones.
+  crtTex.repeat.set(143, 20);
+  return crtTex;
 }
 
 function makeCardMesh(card){
@@ -2160,10 +2218,17 @@ function makeCardMesh(card){
     const spriteMat = new THREE.MeshBasicMaterial({
       map: card.spriteTex, transparent: true, depthWrite: false
     });
-    const spriteMesh = new THREE.Mesh(buildSpriteQuad(), spriteMat);
+    const spriteMesh = new THREE.Mesh(buildSpriteQuad(0.011), spriteMat);
     spriteMesh.renderOrder = 2;    // after the card's opaque face
     mesh.add(spriteMesh);          // rides the card, including the flip
     card.spriteMesh = spriteMesh;
+
+    const crt = new THREE.Mesh(buildSpriteQuad(0.014), new THREE.MeshBasicMaterial({
+      map: crtOverlayTexture(), transparent: true, depthWrite: false, opacity: 0.72
+    }));
+    crt.renderOrder = 3;
+    mesh.add(crt);
+    card.crtMesh = crt;
   }
   card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
   return pivot;
