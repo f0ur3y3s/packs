@@ -211,7 +211,12 @@ def main():
     ap.add_argument("--three", default="three.min.js",
                     help="engine to inline alongside the sprites (default: three.min.js)")
     ap.add_argument("--no-extras", action="store_true",
-                    help="skip the species metadata and artwork backdrops")
+                    help="skip the species metadata (habitat, colour, genus)")
+    ap.add_argument("--backdrops", action="store_true",
+                    help="also bundle blurred official-artwork backdrops. Off by "
+                         "default: habitat scenes replaced them, and they cost "
+                         "0.6 MB plus 151 image decodes at boot for art the card "
+                         "no longer draws")
     ap.add_argument("--backdrop-size", type=int, default=192,
                     help="pixel size of each artwork backdrop (default: 192)")
     ap.add_argument("--backdrop-blur", type=float, default=2.5,
@@ -259,12 +264,13 @@ def main():
 
     meta = {}
     if not args.no_extras:
-        print("\nFetching species metadata and artwork backdrops ...", file=sys.stderr)
+        what = "species metadata and artwork backdrops" if args.backdrops else "species metadata"
+        print(f"\nFetching {what} ...", file=sys.stderr)
         with futures.ThreadPoolExecutor(max_workers=min(args.workers, 8)) as pool:
             sp = [pool.submit(fetch_species, i, args.timeout) for i in range(1, COUNT + 1)]
             bd = [pool.submit(fetch_backdrop, i, args.timeout,
                               args.backdrop_size, args.backdrop_blur)
-                  for i in range(1, COUNT + 1)]
+                  for i in range(1, COUNT + 1)] if args.backdrops else []
             for job in futures.as_completed(sp):
                 dex_id, info, err = job.result()
                 if info:
@@ -278,7 +284,8 @@ def main():
                 else:
                     failures.append(f"#{dex_id} backdrop: {err}")
         withbg = sum(1 for m in meta.values() if m.get("bg"))
-        print(f"  {len(meta)} with metadata, {withbg} with a backdrop", file=sys.stderr)
+        print(f"  {len(meta)} with metadata"
+              + (f", {withbg} with a backdrop" if args.backdrops else ""), file=sys.stderr)
 
     payload = json.dumps({str(k): sprites[k] for k in sorted(sprites)},
                          separators=(",", ":"))

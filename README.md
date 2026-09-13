@@ -110,14 +110,13 @@ metadata is absent.
   `genus`. Colour drives the card border and the panel tint, habitat picks the
   art-window gradient, and the genus replaces the fixed "Kanto Series" line.
   Type still owns the energy pips, glyphs and ink, so nothing semantic is lost.
-- **`other/official-artwork/{id}.png`** is downscaled to 192px, blurred and
-  flattened to JPEG, then drawn under the sprite as a wash of that
-  Pokémon's own art. ~5 KB each. It is baked into the animation plate, so it
-  costs nothing per frame.
+- **`other/official-artwork/{id}.png`** can be bundled as a blurred wash behind
+  the sprite, but is **off by default**: habitat scenes replaced it, and it cost
+  0.6 MB plus 151 image decodes at boot for something the card no longer drew.
+  `--backdrops` brings it back.
 
-`--no-extras` skips both. `--backdrop-size` and `--backdrop-blur` control how
-sharp the wash is; they are independent, so resolution can go up without the
-blur following it.
+`--no-extras` skips the species metadata. `--backdrops` re-enables the artwork
+wash, with `--backdrop-size` and `--backdrop-blur` controlling how sharp it is.
 
 There is no general-purpose "background API" worth wiring up here. The obvious
 candidate for real card art, pokemontcg.io, was returning 500s and connection
@@ -187,9 +186,9 @@ needs storing.
 
 ## Planned work
 
-`BACKGROUNDS.md` plans replacing the flat art-window gradient with procedural
-habitat scenes, driven by the `habitat` field already in `SPRITE_META`.
-`docs/bg-poc.png` is a prototype of the nine habitats.
+Habitat scenes are built and are the only background the card draws. See
+`BACKGROUNDS.md` for the reasoning and what is left — richer time-of-day, and
+splitting scene and sprite onto separate quads so they parallax apart.
 
 ## Notes
 

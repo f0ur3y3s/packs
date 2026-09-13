@@ -1,6 +1,6 @@
 # Natural environments behind the sprites
 
-> **Status: phases 1–3 are built and shipped.** Habitat scenes are drawn on
+> **Status: phases 1–3 are built and shipped, and the artwork wash is gone.** Habitat scenes are drawn on
 > every card. What is left is phase 4 (richer time-of-day and accents) and the
 > layered-parallax extension at the end. The rest of this document is the
 > reasoning behind the approach, kept because the trade-offs still apply.
@@ -106,9 +106,11 @@ Seeded variation across several axes, all cheap:
    what caught the sprite-scale bug below. Separation comes from the centre lift
    plus the sprite's own drop shadow, and night was weighted down and lifted off
    its floor because dark-on-dark was the one failing combination.
-3. ~~**Decide the wash's fate.**~~ Done, and it went as expected: compared side
-   by side, the wash over a scene read as fog. It is off wherever a habitat scene
-   is drawn and stays at 0.62 only when the bundle has no habitat for a Pokémon.
+3. ~~**Decide the wash's fate.**~~ Removed. Compared side by side it read as fog
+   over a scene, so it was first disabled wherever a scene was drawn — which,
+   with all 151 carrying a habitat, meant everywhere. It is now gone from the
+   card and out of the bundle by default, taking 0.6 MB and 151 boot-time image
+   decodes with it. `bundle-sprites.py --backdrops` brings it back.
 4. **Time-of-day ramps and accents**, once the base reads well.
 
 ## The extension worth knowing about

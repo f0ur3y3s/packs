@@ -400,7 +400,6 @@ function drawHabitatScene(ctx, habitat, name, x, y, w, h){
   ctx.fillStyle = pop; ctx.fillRect(x,y,w,h);
   ctx.restore();
 }
-const SPRITE_BACKDROPS = {};
 
 // Everything the card draws from real PokeAPI data, or null when the bundle
 // has no metadata (the card then looks exactly as it did before).
@@ -533,13 +532,6 @@ function makeSpriteRecord(img, entry){
 async function loadSpriteImage(mon){
   const id = NUMBERS[mon.name];
   if(!id) return false;
-  // Blurred wash from the official artwork. It sits behind the sprite and is
-  // baked into the animation plate, so it costs nothing per frame.
-  const meta = window.SPRITE_META && window.SPRITE_META[id];
-  if(meta && meta.bg && !SPRITE_BACKDROPS[mon.name]){
-    const bg = await loadImageFrom(meta.bg, 10000, false);
-    if(bg) SPRITE_BACKDROPS[mon.name] = bg;
-  }
   // Bundled sprites (sprites-data.js) skip the network entirely. A data: URI
   // never taints the canvas, so crossOrigin is neither needed nor wanted.
   const entry = window.SPRITE_DATA && window.SPRITE_DATA[id];
@@ -1089,6 +1081,8 @@ function buildCardFace(card){
   // --- art window ---
   ctx.save();
   rr(ctx,artX-6,artY-6,artW+12,artH+12,10);
+  // Colours the 6px lip around the window, and stands in as the whole
+  // background for any Pokemon the bundle has no habitat for.
   const ground = (meta && HABITAT_GROUNDS[meta.habitat]) || DEFAULT_GROUND;
   const fg=ctx.createLinearGradient(artX,artY,artX+artW,artY+artH);
   fg.addColorStop(0,ground[0]); fg.addColorStop(.5,ground[1]); fg.addColorStop(1,ground[2]);
@@ -1102,26 +1096,6 @@ function buildCardFace(card){
     drawHabitatScene(ctx, meta.habitat, mon.name, artX, artY, artW, artH);
   }
 
-  // Wash of that Pokemon's own artwork over the habitat ground. Scaled to
-  // cover and clipped to the window; it is blurred and semi-transparent, so it
-  // reads as depth behind the sprite rather than a second picture.
-  const backdrop = SPRITE_BACKDROPS[mon.name];
-  if(backdrop && backdrop.complete && backdrop.naturalWidth){
-    const cover = Math.max(artW/backdrop.naturalWidth, artH/backdrop.naturalHeight);
-    const bw = backdrop.naturalWidth*cover, bh = backdrop.naturalHeight*cover;
-    ctx.save();
-    ctx.beginPath(); ctx.rect(artX,artY,artW,artH); ctx.clip();
-    ctx.globalAlpha = (meta && meta.habitat) ? 0.0 : 0.62;
-    ctx.drawImage(backdrop, artX+(artW-bw)/2, artY+(artH-bh)/2, bw, bh);
-    ctx.globalAlpha = 1;
-    // Settle the middle so the sprite always has something to read against.
-    const vig = ctx.createRadialGradient(artX+artW/2, artY+artH/2, artH*0.12,
-                                         artX+artW/2, artY+artH/2, artH*0.72);
-    vig.addColorStop(0, "rgba(255,255,255,.30)");
-    vig.addColorStop(1, "rgba(0,0,0,.16)");
-    ctx.fillStyle = vig; ctx.fillRect(artX,artY,artW,artH);
-    ctx.restore();
-  }
   // The inner border is stroked before the art rather than after it, so that
   // the animation plate below captures it. The sprite is inset by `pad` and
   // never reached this border anyway, so nothing moves visually.
