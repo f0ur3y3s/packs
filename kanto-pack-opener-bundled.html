@@ -1025,7 +1025,7 @@ function raritySymbol(ctx,x,y,r,rarity,holo){
 }
 
 // Returns {front:canvas, mask:canvas, edge:css colour for the card's sides}
-function buildCardFace(card){
+function buildCardFace(card, opts){
   const mon = card.mon, T = TYPES[mon.type], st = card.stats;
   const c = document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
   const ctx = c.getContext("2d");
@@ -1122,23 +1122,27 @@ function buildCardFace(card){
   const rec = SPRITE_IMAGES[mon.name];
   card.art = null;
   if(rec && rec.img.complete && rec.img.naturalWidth){
-    if(rec.n > 1){
-      // Snapshot the empty art window once. Stepping a frame then repaints
-      // just this rect instead of rebuilding the whole 512x716 card face.
-      const plate = document.createElement("canvas");
-      plate.width = artW; plate.height = artH;
-      plate.getContext("2d").drawImage(c, artX, artY, artW, artH, 0, 0, artW, artH);
-      // Offset each card within its loop so ten cards in a pack don't all
-      // breathe in unison.
-      // The animated region gets its own canvas so only it has to reach the
-      // GPU each frame, instead of the whole 512x716 card face.
-      const artCanvas = document.createElement("canvas");
-      artCanvas.width = artW; artCanvas.height = artH;
-      card.art = {x:artX, y:artY, w:artW, h:artH, plate, rec, frame:-1,
-                  phase: Math.random()*rec.total,
-                  canvas: artCanvas, ctx: artCanvas.getContext("2d")};
-    }
-    drawSpriteFrame(ctx, rec, 0, artX, artY, artW, artH);
+    // The sprite gets its own canvas, which becomes the texture of a quad
+    // sitting in front of the card. Created for still sprites too, not just
+    // animated ones: a CDN-sourced GIF decodes to a single frame, and it
+    // should still sit on the quad rather than vanishing.
+    //
+    // No plate any more. The canvas holds only the sprite on transparency, so
+    // stepping a frame clears it rather than repainting a background over it.
+    const artCanvas = document.createElement("canvas");
+    artCanvas.width = artW; artCanvas.height = artH;
+    const actx = artCanvas.getContext("2d");
+    card.art = {x:artX, y:artY, w:artW, h:artH, rec, frame:0,
+                // Offset each card within its loop so ten cards in a pack
+                // don't all breathe in unison.
+                phase: Math.random()*(rec.total||1),
+                canvas: artCanvas, ctx: actx};
+    // Frame 0 up front: stepCardArt only runs for the card in focus, so
+    // without this every other card in the stack would be empty.
+    drawSpriteFrame(actx, rec, 0, 0, 0, artW, artH);
+    // Drawn into the face only for flat renders (the binder). In the scene the
+    // sprite lives on its own quad, so drawing it here too would double it.
+    if(opts && opts.flatSprite) drawSpriteFrame(ctx, rec, 0, artX, artY, artW, artH);
   } else {
     // Only used if the sprite is missing (blocked host, or not yet loaded).
     drawCreature(ctx, artX, artY, artW, artH, mon);
@@ -1703,18 +1707,14 @@ void main(){
   float facing = clamp(dot(N,V),0.0,1.0);
   vec3 Rv = reflect(-V, N);
 
-  // Parallax on the art window only. Shifting what is sampled inside the
-  // window against the frame around it makes the art sit behind the card
-  // surface instead of printed on it -- the single strongest depth cue here,
-  // because it is motion the frame does not share. Clamped so a shifted
-  // sample can never reach outside the window and drag frame pixels in.
+  // No UV parallax here any more. It used to fake the art sitting behind the
+  // card surface by shifting what was sampled inside the window; the sprite is
+  // now a separate surface in front of the card and parallaxes for real, so
+  // doing both would double the movement. inArt is still wanted, to keep the
+  // emboss off the pixel art and to place the window's inner shadow.
   vec2 uvS = vUv;
   float inArt = step(ART0.x, vUv.x) * step(vUv.x, ART1.x)
               * step(ART0.y, vUv.y) * step(vUv.y, ART1.y);
-  if(inArt > 0.5){
-    vec2 par = vec2(Rv.x, Rv.y) * 0.0135 + uTilt * 0.0045;
-    uvS = clamp(vUv + par, ART0 + 0.0018, ART1 - 0.0018);
-  }
   vec4 base = texture2D(uMap, uvS);
   vec3 col = base.rgb;
 
@@ -1848,31 +1848,16 @@ function ensureCardShadow(){
 
 function stepCardArt(card, tSeconds){
   const a = card.art;
-  if(!a) return;
+  if(!a || !card.spriteTex) return;
   const f = spriteFrameAt(a.rec, tSeconds*1000 + a.phase);
   if(f === a.frame) return;
   a.frame = f;
-  // Compose into the small art canvas...
+  // Only the sprite and its shadow, on a transparent ground. The card face
+  // behind it is now completely static -- no part of it is re-uploaded at all.
   const x = a.ctx;
-  x.drawImage(a.plate, 0, 0);
+  x.clearRect(0, 0, a.w, a.h);
   drawSpriteFrame(x, a.rec, f, 0, 0, a.w, a.h);
-
-  const tex = card.frontMat.uniforms.uMap.value;
-  if(card.artTex && renderer.copyTextureToTexture){
-    // ...and push just that rectangle. Re-uploading the whole face was
-    // 1.4 MB a frame against 0.49 MB for the window alone.
-    //
-    // The destination texture has flipY set (everything here is canvas-backed),
-    // so texSubImage2D writes the flipped source from a y measured up from the
-    // bottom of the card, not down from the top.
-    copyAt.set(a.x, CARD_H - a.y - a.h);
-    renderer.copyTextureToTexture(copyAt, card.artTex, tex);
-    // Keep the CPU-side face in step, so a later full upload is not stale.
-    card.frontCanvas.getContext("2d").drawImage(a.canvas, a.x, a.y);
-  } else {
-    card.frontCanvas.getContext("2d").drawImage(a.canvas, a.x, a.y);
-    tex.needsUpdate = true;
-  }
+  card.spriteTex.needsUpdate = true;
 }
 
 // Every card has the same back, so it was building ten identical 512x716
@@ -1887,9 +1872,12 @@ function sharedBackMaterial(){
   // back blew out: deep blue washed to pale, gold to near-white. The card face
   // does not show this because its shader samples the texture directly rather
   // than being lit.
+  // No envMap on the back. Measured, the Phong environment reflections were the
+  // most expensive thing added here, and on matte stock that is face-down most
+  // of the time this one was barely visible. The rim keeps its reflection --
+  // that edge is glossy and always in view.
   backMat = new THREE.MeshPhongMaterial({
-    map: tex, color: 0x9fa2ab, shininess: 16, specular: 0x20242e,
-    envMap: roomEnvTexture(), reflectivity: 0.16, combine: THREE.MixOperation
+    map: tex, color: 0x9fa2ab, shininess: 16, specular: 0x20242e
   });
   return backMat;
 }
@@ -1932,6 +1920,13 @@ function roomEnvTexture(){
   envTex.minFilter = THREE.LinearFilter; envTex.generateMipmaps = false;
   envTex.wrapS = THREE.RepeatWrapping;
   return envTex;
+}
+
+// The bow, shared: the sprite quad in front of the card has to ride the same
+// curve or the gap between them opens up at the corners.
+const CARD_BOW_W = d => d*2.9, CARD_BOW_H = d => d*1.05;
+function cardBowAt(nx, ny, d){
+  return (1 - Math.min(nx*nx,1))*CARD_BOW_W(d) + (1 - Math.min(ny*ny,1))*CARD_BOW_H(d);
 }
 
 function buildCardGeometry(w, h, d, r){
@@ -1986,7 +1981,7 @@ function buildCardGeometry(w, h, d, r){
   //
   // Done to the geometry rather than in the card's vertex shader, because the
   // rim and back are lit by standard materials and would not have followed.
-  const bowW = d*2.9, bowH = d*1.05;
+  const bowW = CARD_BOW_W(d), bowH = CARD_BOW_H(d);
   for(let i=0;i<pos.count;i++){
     const nx = pos.getX(i)/(w/2), ny = pos.getY(i)/(h/2);
     pos.setZ(i, pos.getZ(i)
@@ -1995,6 +1990,28 @@ function buildCardGeometry(w, h, d, r){
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
+  return geo;
+}
+
+// The art window as its own surface, sitting just in front of the card. This
+// is what gives the sprite real depth: it is physically nearer the camera than
+// the scene behind it, so it parallaxes against the frame on its own rather
+// than through a UV trick, and it catches the light separately.
+function buildSpriteQuad(){
+  const qw = CARD_MESH_W * (428/CARD_W), qh = CARD_MESH_H * (286/CARD_H);
+  const offY = (0.5 - (136 + 286/2)/CARD_H) * CARD_MESH_H;
+  const geo = new THREE.PlaneGeometry(qw, qh, 14, 10);
+  const pos = geo.attributes.position;
+  const lift = CARD_MESH_D*0.5 + 0.011;
+  for(let i=0;i<pos.count;i++){
+    // Vertices are quad-local; the bow is defined across the whole card.
+    const cardX = pos.getX(i), cardY = pos.getY(i) + offY;
+    const nx = cardX/(CARD_MESH_W/2), ny = cardY/(CARD_MESH_H/2);
+    pos.setZ(i, cardBowAt(nx, ny, CARD_MESH_D) + lift);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  geo.translate(0, offY, 0);
   return geo;
 }
 
@@ -2039,8 +2056,10 @@ function makeCardMesh(card){
   };
 
   if(card.art){
-    card.artTex = new THREE.CanvasTexture(card.art.canvas);
-    card.artTex.minFilter = THREE.LinearFilter; card.artTex.generateMipmaps = false;
+    card.spriteTex = new THREE.CanvasTexture(card.art.canvas);
+    card.spriteTex.minFilter = THREE.LinearFilter;
+    card.spriteTex.magFilter = THREE.NearestFilter;   // it is pixel art
+    card.spriteTex.generateMipmaps = false;
   }
 
   // Corner radius matched to the 30px radius the card face is drawn with, so
@@ -2050,6 +2069,16 @@ function makeCardMesh(card){
   const mesh = new THREE.Mesh(geo, [frontMat, backMat, edgeMat]);
   const pivot = new THREE.Group();
   pivot.add(mesh);
+
+  if(card.spriteTex){
+    const spriteMat = new THREE.MeshBasicMaterial({
+      map: card.spriteTex, transparent: true, depthWrite: false
+    });
+    const spriteMesh = new THREE.Mesh(buildSpriteQuad(), spriteMat);
+    spriteMesh.renderOrder = 2;    // after the card's opaque face
+    mesh.add(spriteMesh);          // rides the card, including the flip
+    card.spriteMesh = spriteMesh;
+  }
   card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
   return pivot;
 }
@@ -2523,7 +2552,7 @@ function showBinderDetail(id, name, have){
   // pack uses.
   const mon = MON_BY_NAME[name];
   if(mon){
-    const faces = buildCardFace({mon, stats:statsFor(mon), holo:have.best});
+    const faces = buildCardFace({mon, stats:statsFor(mon), holo:have.best}, {flatSprite:true});
     const img = document.createElement("img");
     img.alt = name;
     try { img.src = faces.front.toDataURL("image/png"); d.appendChild(img); } catch(e){}
@@ -2962,7 +2991,7 @@ window.__sheet = function(names){
   return names.map(n=>{
     const mon = MON_BY_NAME[n];
     if(!mon) return null;
-    const f = buildCardFace({mon, stats:statsFor(mon), holo:"none"});
+    const f = buildCardFace({mon, stats:statsFor(mon), holo:"none"}, {flatSprite:true});
     const c = document.createElement("canvas"); c.width=428; c.height=286;
     c.getContext("2d").drawImage(f.front, 42,136,428,286, 0,0,428,286);
     return c.toDataURL("image/png");

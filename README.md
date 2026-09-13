@@ -240,6 +240,28 @@ barely varies, so a highlight flashes on and off over the whole face at once.
 Curved, it sweeps. Measured across a tilt sweep, the left-minus-right
 brightness of the card face moves from −4 to +17 as it turns.
 
+## The sprite is its own surface
+
+The sprite is not painted into the card face. It has its own canvas, textured
+onto a quad sitting just in front of the card, and that quad is bowed to the
+same curve so the gap between them stays even instead of opening at the
+corners. Being physically nearer the camera, it parallaxes against the frame on
+its own — measured over a tilt sweep, it travels about 95px relative to the card
+outline.
+
+Two consequences worth knowing:
+
+- The card face is now completely static. Nothing on it is re-uploaded; only
+  the sprite's own texture changes. Texture traffic over six seconds of viewing
+  went 32.3 MB to 14.7 MB.
+- `buildCardFace` takes `{flatSprite:true}` for renders that need the sprite
+  baked in — the binder, which rebuilds a card as a single image. Without it
+  the binder's cards would come out empty, since the scene path expects the
+  sprite to arrive on the quad.
+
+The shader's old UV parallax is gone. It faked exactly this effect, and running
+both doubled the movement.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.
