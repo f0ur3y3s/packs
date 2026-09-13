@@ -1645,9 +1645,15 @@ fitCamera();
 /* ---------- holo shader ---------- */
 const HOLO_VS = `
 varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+varying vec3 vWN; varying vec3 vWP;
 void main(){
   vUv = uv;
   vN = normalize(normalMatrix * normal);
+  // World space as well, so the card can reflect the room rather than
+  // something fixed to the camera.
+  vWN = normalize(mat3(modelMatrix) * normal);
+  vec4 wp = modelMatrix * vec4(position,1.0);
+  vWP = wp.xyz;
   vec4 mv = modelViewMatrix * vec4(position,1.0);
   vP = mv.xyz;
   gl_Position = projectionMatrix * mv;
@@ -1659,7 +1665,15 @@ uniform float uTime;
 uniform float uHolo;
 uniform float uGold;
 uniform vec2  uTilt;
+uniform sampler2D uEnv;
 varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+varying vec3 vWN; varying vec3 vWP;
+
+// Equirectangular lookup: the room, sampled by where the surface points.
+vec3 envSample(vec3 R){
+  vec2 uv = vec2(atan(R.z, R.x)*0.15915 + 0.5, asin(clamp(R.y,-1.0,1.0))*0.31831 + 0.5);
+  return texture2D(uEnv, uv).rgb;
+}
 
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 
@@ -1725,6 +1739,14 @@ void main(){
   // high exponent snaps from lit to unlit across the face and draws a hard
   // diagonal edge. A low one reads as a gentle sheen.
   col += pow(clamp(dot(N,H),0.0,1.0), 9.0) * 0.055;
+
+  // Reflected room. Weighted by fresnel, so it is barely there face-on and
+  // builds as the card turns away -- which is how a laminated card behaves,
+  // and it is what stops the surface reading as lit-but-nowhere.
+  vec3 WN = normalize(vWN);
+  vec3 Vw = normalize(cameraPosition - vWP);
+  float fres = pow(1.0 - clamp(dot(WN, Vw), 0.0, 1.0), 3.2);
+  col += envSample(reflect(-Vw, WN)) * (0.055 + 0.44*fres);
 
   float m = texture2D(uMask, vUv).r * uHolo;
   if(m > 0.003){
@@ -1835,7 +1857,8 @@ function sharedBackMaterial(){
   // does not show this because its shader samples the texture directly rather
   // than being lit.
   backMat = new THREE.MeshPhongMaterial({
-    map: tex, color: 0x9fa2ab, shininess: 16, specular: 0x20242e
+    map: tex, color: 0x9fa2ab, shininess: 16, specular: 0x20242e,
+    envMap: roomEnvTexture(), reflectivity: 0.16, combine: THREE.MixOperation
   });
   return backMat;
 }
@@ -1849,6 +1872,37 @@ function sharedBackMaterial(){
 // the shape outline, which do not map a card face, so they are recomputed from
 // x/y across the card. And it groups both caps together, while the front and
 // back need different materials, so the triangles are regrouped by facing.
+// A room for the cards to reflect: dark floor, a warm horizon, a cool ceiling
+// and one soft overhead light. Equirectangular, so a reflection vector maps
+// straight onto it, and small because it is only ever seen blurred across a
+// glossy surface.
+let envTex = null;
+function roomEnvTexture(){
+  if(envTex) return envTex;
+  const W = 256, H = 128;
+  const c = document.createElement("canvas"); c.width=W; c.height=H;
+  const x = c.getContext("2d");
+  const g = x.createLinearGradient(0,0,0,H);
+  g.addColorStop(0.00,"#cfd8ef");   // ceiling
+  g.addColorStop(0.42,"#6d76a8");
+  g.addColorStop(0.52,"#3c3f63");   // horizon
+  g.addColorStop(1.00,"#0d0e1c");   // floor
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  // Softbox overhead, plus a dimmer one behind, so turning the card sweeps
+  // a highlight instead of holding a constant sheen.
+  [[W*0.30, H*0.17, W*0.20, "rgba(255,250,235,.95)"],
+   [W*0.78, H*0.26, W*0.13, "rgba(150,200,255,.55)"]].forEach(([lx,ly,lr,col])=>{
+    const lg = x.createRadialGradient(lx,ly,1, lx,ly,lr);
+    lg.addColorStop(0,col); lg.addColorStop(1,"rgba(0,0,0,0)");
+    x.fillStyle=lg; x.fillRect(0,0,W,H);
+  });
+  envTex = new THREE.CanvasTexture(c);
+  envTex.mapping = THREE.EquirectangularReflectionMapping;
+  envTex.minFilter = THREE.LinearFilter; envTex.generateMipmaps = false;
+  envTex.wrapS = THREE.RepeatWrapping;
+  return envTex;
+}
+
 function buildCardGeometry(w, h, d, r){
   const shape = new THREE.Shape();
   const x = -w/2, y = -h/2;
@@ -1892,6 +1946,24 @@ function buildCardGeometry(w, h, d, r){
     if(m !== runMat){ geo.addGroup(runStart*3, (t-runStart)*3, runMat); runMat = m; runStart = t; }
   }
   geo.addGroup(runStart*3, (tris-runStart)*3, runMat);
+
+  // Bow the slab. A card is never dead flat, and a flat plane is the reason a
+  // highlight flashes on and off across the whole face at once instead of
+  // sweeping. Applied after the UVs and the front/back/rim grouping, both of
+  // which classify against the flat normals, then normals are rebuilt so the
+  // lighting follows the new surface.
+  //
+  // Done to the geometry rather than in the card's vertex shader, because the
+  // rim and back are lit by standard materials and would not have followed.
+  const bowW = d*2.9, bowH = d*1.05;
+  for(let i=0;i<pos.count;i++){
+    const nx = pos.getX(i)/(w/2), ny = pos.getY(i)/(h/2);
+    pos.setZ(i, pos.getZ(i)
+                + (1 - Math.min(nx*nx,1))*bowW
+                + (1 - Math.min(ny*ny,1))*bowH);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
   return geo;
 }
 
@@ -1907,7 +1979,7 @@ function makeCardMesh(card){
     uniforms:{
       uMap:{value:tex}, uMask:{value:mask},
       uTime:{value:0}, uHolo:{value:0}, uGold:{value: card.holo==="rare"?1:0},
-      uTilt:{value:new THREE.Vector2(0,0)}
+      uTilt:{value:new THREE.Vector2(0,0)}, uEnv:{value: roomEnvTexture()}
     },
     vertexShader:HOLO_VS, fragmentShader:HOLO_FS
   });
@@ -1917,7 +1989,8 @@ function makeCardMesh(card){
   // card's own dark border tone, and shade it: an unlit side gives the card
   // away as a flat box the moment it turns.
   const edgeMat = new THREE.MeshPhongMaterial({
-    color: new THREE.Color(faces.edge || "#6b6459"), shininess: 18, specular: 0x55504a
+    color: new THREE.Color(faces.edge || "#6b6459"), shininess: 18, specular: 0x55504a,
+    envMap: roomEnvTexture(), reflectivity: 0.30, combine: THREE.MixOperation
   });
 
   if(card.art){

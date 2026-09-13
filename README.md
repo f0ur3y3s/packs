@@ -218,6 +218,28 @@ is tinted below white: the scene runs ambient 0.72 plus two directionals, so at
 full white the back blows out. The card face does not show this because its
 shader samples the texture directly instead of being lit.
 
+## Lighting and shape
+
+Two things stop the card reading as a flat printed rectangle:
+
+**A room to reflect.** `roomEnvTexture` builds a small equirectangular canvas —
+dark floor, warm horizon, cool ceiling, one soft overhead light — used as an
+`envMap` on the rim and back and sampled directly by the card's shader. It is
+weighted by fresnel, so it is barely present face-on and builds as the card
+turns. Without it the card was lit but reflected nothing, which reads as lit
+*nowhere*.
+
+**A bow.** `buildCardGeometry` bows the slab after computing UVs and the
+front/back/rim grouping (both classify against the flat normals), then rebuilds
+normals. It is done to the geometry rather than in the card's vertex shader
+because the rim and back are lit by standard materials and would not have
+followed a shader-only bend.
+
+The bow is what makes the reflection do anything: across a flat card the normal
+barely varies, so a highlight flashes on and off over the whole face at once.
+Curved, it sweeps. Measured across a tilt sweep, the left-minus-right
+brightness of the card face moves from −4 to +17 as it turns.
+
 ## Notes
 
 - three.js r128: no `THREE.CapsuleGeometry`, no bundled `OrbitControls`.
