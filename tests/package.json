@@ -1,0 +1,12 @@
+{
+  "name": "kanto-pack-opener-tests",
+  "private": true,
+  "description": "Browser tests for kanto-pack-opener.html",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.63.0",
+    "pngjs": "^7.0.0"
+  }
+}

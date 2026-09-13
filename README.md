@@ -144,6 +144,17 @@ Rough sizes: showdown at 30 frames is ~4.1 MB across 151 sheets; `gen1` stills
 are ~128 KB. Since the bundle loads in the background, its size costs you how
 long the fallback art is on screen, not how long the page takes to start.
 
+## Tests
+
+`tests/` drives a real Chromium against the page: boot with no network, the
+pack's entrance and tear, the audio state machine (including a stubbed context
+that refuses to open), the binder's storage and filters, and an audit of all
+151 sprite scales. See [tests/README.md](tests/README.md).
+
+```sh
+cd tests && npm install && node run.js
+```
+
 ## Deploying
 
 Published with GitHub Pages, which works whichever source the repository is set

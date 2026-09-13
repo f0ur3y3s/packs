@@ -689,9 +689,10 @@ function silhouetteOf(rec, sx, sy){
 
 // Draw one atlas frame centred in the card's art window, over a soft drop
 // shadow that follows the animation.
-function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
-  const pad = 10;
-  const boxW = artW - pad*2, boxH = artH - pad*2;
+const SPRITE_PAD = 10;
+// Factored out of drawSpriteFrame so the test harness can audit all 151 scales
+// without rendering 151 cards.
+function spriteScale(fw, fh, boxW, boxH){
   // Snap to a whole-pixel multiple. At a fractional scale nearest-neighbour
   // gives some source rows 3 screen pixels and others 4, which reads as a
   // ragged, shimmering edge on the sprite.
@@ -706,9 +707,16 @@ function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
   // are crisper; flooring every scale above 2x drew a sprite fitting at 2.98 at
   // 2.00, a third smaller than a neighbour fitting at 1.97 which kept its exact
   // scale, and that is what made sizes look inconsistent.
-  let scale = Math.min(boxW/rec.fw, boxH/rec.fh, MAX_SPRITE_SCALE);
+  let scale = Math.min(boxW/fw, boxH/fh, MAX_SPRITE_SCALE);
   const whole = Math.floor(scale);
   if(whole >= 2 && whole/scale >= 0.92) scale = whole;
+  return scale;
+}
+
+function drawSpriteFrame(ctx, rec, frame, artX, artY, artW, artH){
+  const pad = SPRITE_PAD;
+  const boxW = artW - pad*2, boxH = artH - pad*2;
+  const scale = spriteScale(rec.fw, rec.fh, boxW, boxH);
   const dw = rec.fw*scale, dh = rec.fh*scale;
   const sx = (frame % rec.cols) * rec.fw, sy = Math.floor(frame / rec.cols) * rec.fh;
   const dx = artX + pad + (boxW-dw)/2, dy = artY + pad + (boxH-dh)/2;
@@ -2529,12 +2537,19 @@ function newPack(opts){
   // already revealed -- exactly where it was.
   if(silent) return;
   UI.action.style.display="none";
+  armIdleHint();
+}
+let idleTimer = null;
+// The "Open the pack" button is the fallback for anyone who hasn't worked out
+// the drag. onDown hides it the moment the pack is touched, so it has to be
+// re-armed when they let go without tearing anything -- otherwise one stray
+// tap removes the only visible way forward for the rest of the pack.
+function armIdleHint(){
   clearTimeout(idleTimer);
   idleTimer = setTimeout(()=>{
     if(state==="idle" && tearProgress===0) UI.action.style.display="block";
   }, 7000);
 }
-let idleTimer = null;
 
 /* ---------- tearing ---------- */
 function applyTear(){
@@ -3203,6 +3218,7 @@ function onUp(){
     } else if(tapped){
       setHint("Drag <b>sideways</b> across the tear strip at the top");
     }
+    if(tearProgress === 0) armIdleHint();
   } else if(state==="viewing" && tapped){
     const card = cards[index];
     if(!card) return;
@@ -3450,6 +3466,17 @@ window.__back = function(){ return buildCardBack().toDataURL("image/png"); };
 // The pack should play its entrance exactly once per pack, not again when the
 // artwork finishes loading.
 window.__packScale = function(){ return packGroup ? packGroup.scale.x : 0; };
+// Test hook: every sprite's on-card magnification, without rendering 151 cards.
+window.__spriteScales = function(){
+  const artW = CARD_W-84, artH = 286;
+  const boxW = artW - SPRITE_PAD*2, boxH = artH - SPRITE_PAD*2;
+  const scales = {};
+  DEX_ORDER.forEach(name=>{
+    const rec = SPRITE_IMAGES[name];
+    if(rec && rec.fw) scales[name] = spriteScale(rec.fw, rec.fh, boxW, boxH);
+  });
+  return { cap: MAX_SPRITE_SCALE, scales };
+};
 window.__sheet = function(names){
   return names.map(n=>{
     const mon = MON_BY_NAME[n];
