@@ -259,11 +259,22 @@ of every copy, not just the best one, so three Charizards can read "1 holo ·
 backfilled on read by attributing every copy to the best finish, which is the
 only reading the old data supports.
 
-## Planned work
+## The art window
 
-Habitat scenes are built and are the only background the card draws. See
-`BACKGROUNDS.md` for the reasoning and what is left — richer time-of-day, and
-splitting scene and sprite onto separate quads so they parallax apart.
+Habitat scenes are the only background the card draws, and they move. The scene
+is rendered onto its own canvas 30% larger than the window on every side, and
+the card's shader samples it inside the window with an offset that follows the
+tilt — weighted by height, so the foreground travels and the sky barely does.
+The sprite quad leans a few pixels the other way. The surplus around the scene
+is what the offset shifts into, so the picture never runs out at the edges.
+
+Geometry could not do this. The sprite quad sits 0.02 units proud of a card
+1.72 wide, and at a 20-degree tilt that is about two pixels across a 512px
+face — real parallax, and invisible. Shifting what is sampled is not bounded by
+the thickness of a card: it is about 30px at a full drag.
+
+`BACKGROUNDS.md` has the full reasoning, including why the planned
+two-quad approach was abandoned and the two bugs it took to get here.
 
 ## Card back
 

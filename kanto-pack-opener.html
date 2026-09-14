@@ -1105,6 +1105,20 @@ function drawCreature(ctx, X, Y, W, H, mon){
    4. Card faces
    ============================================================ */
 const CARD_W = 512, CARD_H = 716;
+// How much wider than the art window the habitat scene is drawn. The surplus
+// is the shader's room to move. It has to cover the widest tilt either input
+// path produces -- device orientation reaches 1.7, wider than a drag's 1.3 --
+// with the depth gradient intact: the shader clamps rather than sampling off
+// the edge, and a clamp pins the sky and the ground to the same offset, which
+// is the one thing this is all for. At 1.30 the margin is 11.5% of the texture
+// against a worst case of 9.4%.
+const SCENE_OVERSCAN = 1.30;
+// The centre crop, as a fraction of the scene texture. Shared with the shader.
+const SCENE_INSET = (SCENE_OVERSCAN - 1) / (2 * SCENE_OVERSCAN);
+// Texture UV the scene shifts per unit of tilt. Tuned so a full drag moves the
+// foreground about 30px of a 428px window: enough to read as depth, short of
+// the scene sliding about inside its frame.
+const SCENE_PARALLAX = 0.055;
 const CARD_FONT = '"Trebuchet MS","Segoe UI",Arial,sans-serif';
 
 function statsFor(mon){
@@ -1423,8 +1437,20 @@ function buildCardFace(card, opts){
   // A landscape for the habitat, over the gradient (which still colours the
   // 6px lip around the window). Falls back to the plain gradient when the
   // bundle carries no metadata.
+  //
+  // Drawn onto its own canvas, larger than the window on every side, and the
+  // face gets the centre crop. The margin is what the card's shader shifts
+  // into when the card is tilted: the scene slides against the frame and the
+  // sprite in front of it, and never runs out of picture at the edges.
+  card.scene = null;
   if(meta && meta.habitat){
-    drawHabitatScene(ctx, meta, mon.name, artX, artY, artW, artH, card.holo);
+    const OW = Math.round(artW*SCENE_OVERSCAN), OH = Math.round(artH*SCENE_OVERSCAN);
+    const sc = document.createElement("canvas"); sc.width = OW; sc.height = OH;
+    drawHabitatScene(sc.getContext("2d"), meta, mon.name, 0, 0, OW, OH, card.holo);
+    card.scene = sc;
+    // The crop keeps the face self-sufficient: still renders, the summary
+    // thumbnails and the binder grid all read this canvas, not the shader.
+    ctx.drawImage(sc, (OW-artW)/2, (OH-artH)/2, artW, artH, artX, artY, artW, artH);
   }
 
   // The inner border is stroked before the art rather than after it, so that
@@ -2148,6 +2174,11 @@ uniform float uHolo;
 uniform float uGold;
 uniform vec2  uTilt;
 uniform sampler2D uEnv;
+// The habitat scene, drawn larger than the window it shows through.
+uniform sampler2D uScene;
+uniform float uHasScene;
+uniform float uSceneInset;   // the centre crop, as a fraction of the texture
+uniform float uParallax;     // texture UV shifted per unit of tilt
 varying vec2 vUv; varying vec3 vN; varying vec3 vP;
 varying vec3 vWN; varying vec3 vWP;
 
@@ -2170,16 +2201,39 @@ void main(){
   float facing = clamp(dot(N,V),0.0,1.0);
   vec3 Rv = reflect(-V, N);
 
-  // No UV parallax here any more. It used to fake the art sitting behind the
-  // card surface by shifting what was sampled inside the window; the sprite is
-  // now a separate surface in front of the card and parallaxes for real, so
-  // doing both would double the movement. inArt is still wanted, to keep the
-  // emboss off the pixel art and to place the window's inner shadow.
+  // The card face is not parallaxed: it is the print, and the print does not
+  // move. inArt marks the window, which keeps the emboss off the pixel art and
+  // places the window's inner shadow.
   vec2 uvS = vUv;
   float inArt = step(ART0.x, vUv.x) * step(vUv.x, ART1.x)
               * step(ART0.y, vUv.y) * step(vUv.y, ART1.y);
   vec4 base = texture2D(uMap, uvS);
   vec3 col = base.rgb;
+
+  // Inside the window, the scene is resampled from its own oversized texture
+  // with an offset that follows the tilt, so it slides against the frame and
+  // against the sprite on the quad in front of it.
+  //
+  // Geometry cannot do this. The sprite quad already sits 0.02 units proud of
+  // a card 1.72 wide, and at a 20-degree tilt that buys about two pixels of
+  // movement across a 512px face -- true parallax, and invisible. Shifting
+  // what is sampled is not bound by the thickness of a card.
+  if(uHasScene > 0.5 && inArt > 0.5){
+    vec2 lw = clamp((vUv - ART0) / (ART1 - ART0), 0.0, 1.0);
+    // Near things move more than far ones. lw.y is 0 at the foot of the
+    // window and 1 at the top, so the ground travels and the sky barely does.
+    float depth = mix(1.0, 0.22, lw.y);
+    // uTilt is (yaw, pitch): x is the card turning left and right, y is it
+    // tipping top to bottom. So a yaw slides the scene sideways and a pitch
+    // slides it up and down. The vec2(uTilt.y, -uTilt.x) further down this
+    // shader is a light direction, not a displacement -- using it here turned
+    // a sideways drag into a vertical slide.
+    vec2 par = vec2(uTilt.x, -uTilt.y) * uParallax * depth;
+    float room = uSceneInset * 0.92;
+    par = clamp(par, -room, room);
+    vec2 suv = mix(vec2(uSceneInset), vec2(1.0 - uSceneInset), lw) + par;
+    col = texture2D(uScene, suv).rgb;
+  }
 
   // Inner shadow around the window, deepest on the side the light comes from,
   // which is what a recess actually does.
@@ -2509,6 +2563,36 @@ function crtOverlayTexture(){
   return crtTex;
 }
 
+// A sampler left unbound is undefined behaviour in GL, and a few of the 151
+// have no habitat in the bundle. One shared black pixel stands in for them.
+let blankTex = null;
+function blankTexture(){
+  if(blankTex) return blankTex;
+  const c = document.createElement("canvas"); c.width = c.height = 1;
+  const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0,0,1,1);
+  blankTex = new THREE.CanvasTexture(c);
+  return blankTex;
+}
+
+// The sprite leans the opposite way to the scene behind it, which is what
+// turns a sliding backdrop into two things at different distances. Kept small:
+// the sprite is inset from the window by ten pixels and must not reach the
+// edge of it. World units per unit of tilt.
+const SPRITE_PARALLAX = 0.022;
+// A sprite scaled to fill the window still keeps the 10px pad drawSpriteFrame
+// insets it by, and nothing may push it past that: a Pokemon clipped by its own
+// window is worse than no parallax at all. Device tilt reaches 1.7, which
+// unclamped would be eleven pixels.
+const SPRITE_PARALLAX_MAX = 8 * (CARD_MESH_W/CARD_W);
+function applyCardParallax(card, tiltX, tiltY){
+  const m = card.spriteMesh;
+  if(!m || m.userData.baseX === undefined) return;
+  m.position.x = m.userData.baseX + clamp(tiltX * SPRITE_PARALLAX, -SPRITE_PARALLAX_MAX, SPRITE_PARALLAX_MAX);
+  m.position.y = m.userData.baseY - clamp(tiltY * SPRITE_PARALLAX, -SPRITE_PARALLAX_MAX, SPRITE_PARALLAX_MAX);
+  // The CRT glass is the window itself, not something behind it, so it stays
+  // where the print put it.
+}
+
 function makeCardMesh(card){
   const faces = buildCardFace(card);
   card.frontCanvas = faces.front;
@@ -2517,11 +2601,27 @@ function makeCardMesh(card){
   const mask = new THREE.CanvasTexture(faces.mask);
   mask.minFilter = THREE.LinearFilter; mask.generateMipmaps = false;
 
+  let sceneTex = null;
+  if(card.scene){
+    sceneTex = new THREE.CanvasTexture(card.scene);
+    sceneTex.minFilter = THREE.LinearFilter; sceneTex.generateMipmaps = false;
+    // The scene is dithered pixel art, and the shader samples it at 1:1 inside
+    // the window, so a linear magnify would only soften the dither it was
+    // given. It has to clamp, or a parallax offset would wrap the sky round to
+    // the ground.
+    sceneTex.magFilter = THREE.NearestFilter;
+    sceneTex.wrapS = sceneTex.wrapT = THREE.ClampToEdgeWrapping;
+    card.sceneTex = sceneTex;
+  }
   const frontMat = new THREE.ShaderMaterial({
     uniforms:{
       uMap:{value:tex}, uMask:{value:mask},
       uTime:{value:0}, uHolo:{value:0}, uGold:{value: (card.foil||card.holo)==="rare"?1:0},
-      uTilt:{value:new THREE.Vector2(0,0)}, uEnv:{value: roomEnvTexture()}
+      uTilt:{value:new THREE.Vector2(0,0)}, uEnv:{value: roomEnvTexture()},
+      uScene:{value: sceneTex || blankTexture()},
+      uHasScene:{value: sceneTex ? 1 : 0},
+      uSceneInset:{value: SCENE_INSET},
+      uParallax:{value: SCENE_PARALLAX}
     },
     vertexShader:HOLO_VS, fragmentShader:HOLO_FS
   });
@@ -2588,6 +2688,11 @@ function makeCardMesh(card){
       spriteMesh.position.x += sx; spriteMesh.position.y += sy;
       crt.position.x += sx;        crt.position.y += sy;
     }
+    // Where the sprite sits with no tilt applied. The scene behind it is
+    // parallaxed in the shader; this is the other half of that, and it has to
+    // be measured from wherever a misprint left the print.
+    spriteMesh.userData.baseX = spriteMesh.position.x;
+    spriteMesh.userData.baseY = spriteMesh.position.y;
   }
   card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
   return pivot;
@@ -3162,6 +3267,8 @@ function closeBinderCard(){
     if(u.uMask.value) u.uMask.value.dispose();
     card.frontMat.dispose();
   }
+  // Not the blank stand-in: it is shared by every card without a habitat.
+  if(card.sceneTex) card.sceneTex.dispose();
   if(card.spriteTex) card.spriteTex.dispose();
   if(binderView.edgeMat) binderView.edgeMat.dispose();
   renderer.dispose();
@@ -3246,6 +3353,7 @@ function openBinderCard(mon, finish, misprint){
     pivot.rotation.x = view.cx;
     card.frontMat.uniforms.uTime.value = t;
     card.frontMat.uniforms.uTilt.value.set(view.cy*1.5, view.cx*1.5);
+    applyCardParallax(card, view.cy*1.5, view.cx*1.5);
     stepCardArt(card, t);
     renderer.render(scene, camera);
   })();
@@ -3757,6 +3865,7 @@ function animate(){
     // the rotation instead holds the card still in the world while the phone
     // moves around it, so it reads as floating in place.
     card.frontMat.uniforms.uTilt.value.set(-mo.y*1.7, -mo.x*1.7);
+    applyCardParallax(card, -mo.y*1.7, -mo.x*1.7);
     if(i===index && state==="viewing" && card.revealed){
       // FLOAT_TILT is in radians at full sweep, matched to Motion's own RANGE
       // (32 degrees = 0.56 rad) so the counter-rotation tracks the device close
@@ -3801,6 +3910,27 @@ window.__misprints = {
     card.foil = printedFoil(card);
     return buildCardFace(card, {flatSprite:true}).front.toDataURL("image/png");
   }
+};
+// Test hook: the numbers behind the window's parallax, so the harness can
+// check the scene can never run out of picture at the edges.
+window.__parallax = function(name){
+  // Built here rather than read off a dealt card: the pack's meshes do not
+  // exist until it is torn open.
+  const mon = MON_BY_NAME[name || "Onix"];
+  const card = {mon, stats: statsFor(mon), holo: "none"};
+  buildCardFace(card);
+  return {
+    overscan: SCENE_OVERSCAN,
+    inset: SCENE_INSET,
+    uParallax: SCENE_PARALLAX,
+    hasScene: card.scene ? 1 : 0,
+    sceneW: card.scene ? card.scene.width : 0,
+    sceneH: card.scene ? card.scene.height : 0,
+    artW: CARD_W-84, artH: 286,
+    spriteParallax: SPRITE_PARALLAX,
+    spriteParallaxMaxPx: SPRITE_PARALLAX_MAX / (CARD_MESH_W/CARD_W),
+    spritePad: SPRITE_PAD
+  };
 };
 // Test hook: pack odds over many packs, aggregated in the page so the harness
 // does not pay a round trip each. Reports anything malformed rather than

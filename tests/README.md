@@ -25,6 +25,7 @@ which also means the frame rates it can measure are not worth anything.
 | `audio` | The context opens on a gesture and sounds actually schedule; against a stubbed `AudioContext` that refuses to run, the button reports it and every gesture retries. |
 | `binder` | A real pack is recorded to `localStorage` with per-finish tallies, the filters count correctly, and reopening a card does not leak a WebGL canvas per open. |
 | `sprites` | Audits all 151 sprite scales at once: nothing magnified past the cap, nothing drawn below 1×. |
+| `scene` | The habitat scene's parallax headroom: the scene texture is oversized, and at the widest tilt either input path produces the offset still fits inside the margin, so the shader never has to clamp. Also catches a shader that failed to compile, which shows as a console error rather than a page error. |
 | `odds` | 40,000 packs through the real generator: holo rate, the reverse slot's tier split, the misprint rate and spread, and that no pack is malformed. |
 
 `contact-sheet.js` is not a test — it renders card art windows into one PNG so a
@@ -58,5 +59,6 @@ line is the only reliable ready signal), `dragTearStrip()`, `openPack()` and
 
 The page exposes a few hooks for these tests, all named `__`:
 `window.__packScale()`, `window.__spriteScales()`, `window.__sheet(names)`,
-`window.__back()`, `window.__audio()`, `window.__packOdds(n)` and
+`window.__back()`, `window.__audio()`, `window.__packOdds(n)`,
+`window.__parallax(name)` and
 `window.__misprints` (`.kinds`, `.spec(name, kind)`, `.render(name, kind, holo)`).

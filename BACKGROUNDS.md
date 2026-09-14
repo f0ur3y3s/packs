@@ -1,9 +1,11 @@
 # Natural environments behind the sprites
 
-> **Status: phases 1–4 are built and shipped, and the artwork wash is gone.** Habitat scenes are drawn on
-> every card. What is left is phase 4 (richer time-of-day and accents) and the
-> layered-parallax extension at the end. The rest of this document is the
-> reasoning behind the approach, kept because the trade-offs still apply.
+> **Status: done.** Phases 1–4 and the parallax extension are all built and
+> shipped, and the artwork wash is gone. Habitat scenes are drawn on every card
+> and move against the sprite when the card tilts. The rest of this document is
+> the reasoning behind the approach, kept because the trade-offs still apply —
+> except the extension section below, which records how it was actually built,
+> since the plan turned out to be wrong about the method.
 
 ## Where this stands today
 
@@ -118,19 +120,46 @@ Seeded variation across several axes, all cheap:
    agrees with the card frame instead of being a separate decision. Holo rares
    and legendaries get a band of light across the sky.
 
-## The extension worth knowing about
+## The extension, and why it was not built the way it was planned
 
-The card face is a single texture, so the background and the sprite currently
-parallax together. Splitting them into two layers — the scene on one quad, the
-sprite on another slightly in front — would let them move at different rates as
-the card tilts, which is what would make the window read as a diorama with real
-depth rather than a picture of one.
+**The plan.** The card face is a single texture, so the background and the
+sprite parallax together. Split them into two layers — the scene on one quad,
+the sprite on another slightly in front — and they move at different rates as
+the card tilts, which makes the window read as a diorama rather than a picture
+of one.
 
-That is a bigger change: it means a second mesh per card, reworking how the
-holo mask covers the window, and revisiting the partial-texture-upload path that
-keeps the animation cheap. Worth doing, but after the scenes themselves look
-right — and worth knowing it is available, because it changes how much effort is
-justified on faking depth within a single layer.
+**Why that does not work.** A card is 0.019 units thick against 1.72 of width.
+The sprite quad already sits 0.02 proud of the face, and at a 20-degree tilt
+that buys about **two pixels** of movement across a 512px face. It is true
+parallax and it is invisible. Putting the scene on a quad of its own would have
+bought a fraction of that, and it would have cost a mesh and a draw call per
+card, put an opaque surface between the face and the sprite where the holo is
+drawn, and left the scene's edges free to wander inside a fixed window. Every
+one of those problems comes from trying to express depth as geometry inside a
+box the thickness of a card.
+
+**What was built instead.** The scene is drawn onto its own canvas, 30% larger
+than the window on every side, and handed to the card's own shader as a second
+sampler. Inside the window the shader samples that texture with an offset that
+follows the tilt, weighted by height so the foreground travels and the sky
+barely does. The surplus is what it shifts into, so the picture never runs out.
+The sprite quad leans a few pixels the other way, clamped to the inset
+`drawSpriteFrame` already gives it.
+
+No extra mesh, no extra draw call, the holo path untouched, and the movement is
+not bounded by the thickness of a card — about 30px at a full drag, where the
+geometric version managed two.
+
+Two things went wrong on the way, both worth remembering. The offset was first
+mapped to `vec2(uTilt.y, -uTilt.x)`, copied from the light-direction term
+further down the same shader; that is a direction, not a displacement, and it
+turned a sideways drag into a vertical slide. It was found by rendering the
+offset itself as colour, which is the quickest way to see what a shader is
+actually doing. And the first overscan, 1.18, was enough for a drag but not for
+the device-orientation path's wider tilt, so the shader's safety clamp engaged
+at the extremes and pinned the sky and the ground to the same offset — the one
+thing the whole feature exists to avoid. The `scene` test suite now asserts that
+headroom.
 
 ## Rough effort
 
@@ -140,7 +169,7 @@ justified on faking depth within a single layer.
 | 2 — tuning against all 151 | half a day, mostly looking |
 | 3 — wash decision | an hour |
 | 4 — time of day and accents | a few hours |
-| Layered parallax extension | a day, and it touches the render path |
+| Layered parallax extension | built as a shader offset instead; half a day |
 
 ## Open questions
 

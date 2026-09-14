@@ -8,7 +8,7 @@
 const path = require("path");
 const { chromiumPath } = require("./lib/harness");
 
-const SUITES = ["boot", "pack", "audio", "binder", "sprites", "odds"];
+const SUITES = ["boot", "pack", "audio", "binder", "sprites", "scene", "odds"];
 
 (async () => {
   try { require("playwright-core"); }
