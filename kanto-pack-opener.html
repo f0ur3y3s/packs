@@ -118,6 +118,8 @@
     padding:2.5px 5px;border-radius:4px;background:rgba(0,0,0,.7)}
   .tag.g{color:#131033;background:var(--gold)}
   .tag.t{color:#131033;background:var(--foil)}
+  /* Sits at the top so it can share a thumbnail with a HOLO or REVERSE tag. */
+  .tag.m{top:4px;bottom:auto;color:var(--paper);background:var(--red)}
   #summary .row.foot{gap:10px}
   #summary .cta{flex:1}
   /* ---- binder ---- */
@@ -149,10 +151,17 @@
   .slot .no{position:absolute;top:3px;left:5px;font-size:8.5px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.04em}
   .slot .nm{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;font-weight:700;
     color:rgba(255,255,255,.72);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .slot .dup{position:absolute;top:3px;right:4px;font-size:8.5px;font-weight:800;color:#131033;
+  /* Both badges sit in one top-right row so a misprinted duplicate can show
+     the fault and the count without them landing on top of each other. */
+  .slot .badges{position:absolute;top:3px;right:4px;display:flex;gap:3px;align-items:center}
+  .slot .dup{font-size:8.5px;font-weight:800;color:#131033;
     background:rgba(255,255,255,.82);border-radius:999px;padding:1px 4px}
   .slot.holo{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 18px -8px rgba(255,209,92,.65)}
   .slot.rev{border-color:var(--foil);box-shadow:0 0 0 1px var(--foil)}
+  /* A misprint outranks the foil for the border: it is the rarer thing. */
+  .slot.mis{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 6px 18px -8px rgba(214,24,43,.7)}
+  .slot .err{font-size:8.5px;font-weight:800;color:var(--paper);
+    background:var(--red);border-radius:4px;padding:0 3px;line-height:12px}
   #binderDetail{position:absolute;inset:0;z-index:2;background:rgba(7,12,34,.975);backdrop-filter:blur(10px);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
   #binderDetail[hidden]{display:none}
@@ -219,6 +228,7 @@
     <button class="chip" data-filter="owned">Collected</button>
     <button class="chip" data-filter="dupes">Duplicates</button>
     <button class="chip" data-filter="holo">Holos</button>
+    <button class="chip" data-filter="misprint">Misprints</button>
   </div>
   <div id="binderGrid"></div>
   <div id="binderDetail" hidden><div id="binderStage"></div><div id="binderMeta"></div><div id="binderActions"></div></div>
@@ -1133,12 +1143,209 @@ function raritySymbol(ctx,x,y,r,rarity,holo){
   ctx.restore();
 }
 
+/* ---------- misprints ---------- */
+// Cards that came off the press wrong. Every kind here is something that
+// actually happens to real cards: sheets cut off-register, colour plates that
+// drift apart, the sealing jaws crimping a card, a foil layer applied to the
+// wrong sheet, and text that went to print with a mistake in it.
+//
+// The rate is per pack, not per card, and it is deliberately generous: a
+// genuine miscut is far rarer than one pack in twelve, but a misprint nobody
+// ever pulls is not a feature.
+const MISPRINT_RATE = 1/12;
+const MISPRINTS = [
+  {kind:"offcut",   w:32, label:"OFF-CENTRE CUT",   blurb:"cut off-centre on the sheet"},
+  {kind:"inkshift", w:15, label:"INK REGISTRATION", blurb:"the colour plates drifted apart"},
+  {kind:"ghost",    w:12, label:"DOUBLE STRIKE",    blurb:"printed twice, a hair apart"},
+  {kind:"crimp",    w:11, label:"FACTORY CRIMP",    blurb:"crimped by the wrapping machine"},
+  {kind:"typo",     w:10, label:"TEXT ERROR",       blurb:"went to press with the text wrong"},
+  {kind:"foil",     w:10, label:"FOIL ERROR",       blurb:"the foil layer went on the wrong card"},
+  {kind:"miscut",   w: 6, label:"MISCUT",           blurb:"cut clean into the next card"}
+];
+const MISPRINT_BY_KIND = {};
+MISPRINTS.forEach(m=>{ MISPRINT_BY_KIND[m.kind] = m; });
+
+function rollMisprint(rng){
+  if(rng() >= MISPRINT_RATE) return null;
+  const total = MISPRINTS.reduce((n,m)=>n+m.w, 0);
+  let r = rng()*total;
+  for(const m of MISPRINTS){ if((r -= m.w) < 0) return m.kind; }
+  return MISPRINTS[0].kind;
+}
+
+// The foil that actually got printed, which is not always the one the card was
+// meant to have. card.holo stays the intended finish -- the binder, the rarity
+// symbol and the HOLO RARE stamp all key off it, and that mismatch is the
+// whole point of a foil error.
+function printedFoil(card){
+  if(card.misprint !== "foil") return card.holo;
+  return card.holo === "none" ? "rare" : "none";
+}
+
+// Every parameter is derived from the card's name and the kind of fault, so a
+// misprint pulled today looks identical when the binder rebuilds it later.
+const SPECIES_COLORS = Object.keys(SPECIES_PALETTE);
+function misprintSpec(name, kind){
+  const r = mulberry32(hashStr(name + "\u00b7misprint\u00b7" + kind));
+  const between = (a,b)=> a + r()*(b-a);
+  const sign = ()=> r() < 0.5 ? -1 : 1;
+  const info = MISPRINT_BY_KIND[kind] || {label:"MISPRINT", blurb:"came off the press wrong"};
+  const s = {kind, label:info.label, blurb:info.blurb, dx:0, dy:0};
+
+  // The card the press cut into, for anything that shifts the print.
+  const nb = SPECIES_PALETTE[SPECIES_COLORS[(r()*SPECIES_COLORS.length)|0]];
+  s.neighbour = [shade(nb.c,.30), nb.d];
+
+  if(kind === "offcut"){
+    s.dx = Math.round(sign()*between(10,22));
+    s.dy = Math.round(sign()*between(7,18));
+  } else if(kind === "miscut"){
+    // Badly off on one axis, a little on the other: a sheet fed in crooked
+    // drifts mostly in the direction it is travelling.
+    if(r() < 0.5){ s.dx = Math.round(sign()*between(44,74)); s.dy = Math.round(sign()*between(0,14)); }
+    else         { s.dy = Math.round(sign()*between(50,86)); s.dx = Math.round(sign()*between(0,14)); }
+  } else if(kind === "inkshift"){
+    s.spread = Math.round(between(3,7));
+    s.skew   = Math.round(sign()*between(0,3));
+  } else if(kind === "ghost"){
+    s.dx = Math.round(sign()*between(3,8));
+    s.dy = Math.round(sign()*between(2,6));
+  } else if(kind === "crimp"){
+    // Kept clear of the art window: the sprite rides a quad in front of the
+    // card, so a crimp drawn across the window would vanish behind it.
+    s.y = r() < 0.42 ? Math.round(between(44,104)) : Math.round(between(444,CARD_H-104));
+    s.h = Math.round(between(22,30));
+  } else if(kind === "typo"){
+    Object.assign(s, textError(name, r));
+  }
+  return s;
+}
+
+// Three ways a card goes to press with the wrong text on it.
+function textError(name, r){
+  const roll = r();
+  if(roll < 0.38){
+    // A doubled or dropped letter. Both are real, and both read instantly.
+    const i = 1 + ((r()*(name.length-2))|0);
+    return r() < 0.5
+      ? {name: name.slice(0,i) + name[i] + name.slice(i), detail:"a doubled letter"}
+      : {name: name.slice(0,i) + name.slice(i+1),         detail:"a dropped letter"};
+  }
+  if(roll < 0.66){
+    // Two letters transposed.
+    const i = 1 + ((r()*(name.length-2))|0);
+    return {name: name.slice(0,i) + name[i+1] + name[i] + name.slice(i+2),
+            detail:"two letters transposed"};
+  }
+  // An HP that never made it past the proof: an extra zero, or a digit doubled.
+  return {hpFactor: r() < 0.6 ? 10 : 11, detail:"the HP an order out"};
+}
+
+// Faults are applied to the finished face rather than woven into the layout:
+// a press fault happens to the whole card at once, after everything is on it.
+function applyMisprintToFace(ctx, canvas, spec, R, borderColor){
+  const W = canvas.width, H = canvas.height;
+  const snap = document.createElement("canvas");
+  snap.width = W; snap.height = H;
+  snap.getContext("2d").drawImage(canvas, 0, 0);
+
+  if(spec.kind === "offcut" || spec.kind === "miscut"){
+    // The print bleeds to the edge of the sheet; the rounded corners are the
+    // die cut, which happens after. So square the print off before shifting it,
+    // or the neighbouring card shows through this card's own corners.
+    const sheet = document.createElement("canvas");
+    sheet.width = W; sheet.height = H;
+    const sc = sheet.getContext("2d");
+    sc.fillStyle = borderColor; sc.fillRect(0,0,W,H);
+    sc.drawImage(snap, 0, 0);
+
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    rr(ctx,0,0,W,H,R); ctx.clip();
+    const g = ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0, spec.neighbour[0]); g.addColorStop(1, spec.neighbour[1]);
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    ctx.drawImage(sheet, spec.dx, spec.dy);
+    // The guillotine line between this card and the one beside it.
+    ctx.strokeStyle = "rgba(0,0,0,.34)"; ctx.lineWidth = 2;
+    if(spec.dx){ const x = spec.dx > 0 ? spec.dx : W + spec.dx;
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    if(spec.dy){ const y = spec.dy > 0 ? spec.dy : H + spec.dy;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    ctx.restore();
+    return;
+  }
+
+  if(spec.kind === "inkshift"){
+    // Separate the press's three plates and lay them back down out of
+    // register. Multiplying by a primary keeps that channel and kills the
+    // other two; adding the three back together reproduces the original
+    // exactly where they line up, and fringes colour where they do not.
+    const plate = col => {
+      const t = document.createElement("canvas");
+      t.width = W; t.height = H;
+      const x = t.getContext("2d");
+      x.drawImage(snap,0,0);
+      x.globalCompositeOperation = "multiply";
+      x.fillStyle = col; x.fillRect(0,0,W,H);
+      x.globalCompositeOperation = "destination-in";   // multiply also hit the alpha
+      x.drawImage(snap,0,0);
+      return t;
+    };
+    const d = spec.spread;
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(plate("#ff0000"), -d, spec.skew);
+    ctx.drawImage(plate("#00ff00"),  0, 0);
+    ctx.drawImage(plate("#0000ff"),  d, -spec.skew);
+    ctx.restore();
+    return;
+  }
+
+  if(spec.kind === "ghost"){
+    ctx.save();
+    rr(ctx,0,0,W,H,R); ctx.clip();
+    ctx.globalAlpha = 0.38;
+    ctx.globalCompositeOperation = "multiply";
+    ctx.drawImage(snap, spec.dx, spec.dy);
+    ctx.restore();
+    return;
+  }
+
+  if(spec.kind === "crimp"){
+    // The sealing jaws press a toothed band into the card: the print inside it
+    // is squeezed, with a lit ridge above and a shadow below.
+    const y = spec.y, h = spec.h;
+    ctx.save();
+    rr(ctx,0,0,W,H,R); ctx.clip();
+    ctx.drawImage(snap, 0, y, W, h, 0, y + 3, W, h - 6);
+    ctx.fillStyle = "rgba(255,255,255,.26)"; ctx.fillRect(0, y, W, 3);
+    ctx.fillStyle = "rgba(0,0,0,.26)";       ctx.fillRect(0, y + h - 3, W, 3);
+    ctx.fillStyle = "rgba(0,0,0,.09)";
+    for(let x = 3; x < W; x += 12) ctx.fillRect(x, y + 4, 6, h - 8);
+    ctx.restore();
+    return;
+  }
+}
+
 // Returns {front:canvas, mask:canvas, edge:css colour for the card's sides}
 function buildCardFace(card, opts){
   const mon = card.mon, T = TYPES[mon.type], st = card.stats;
   const c = document.createElement("canvas"); c.width=CARD_W; c.height=CARD_H;
   const ctx = c.getContext("2d");
   const R = 30;
+
+  // A press fault, if this card has one. Only the text error changes what gets
+  // laid out; the rest happen to the finished face at the bottom of this
+  // function. The dex number always comes from the real name -- a typo is on
+  // the card, not in the set.
+  const mis = card.misprint ? misprintSpec(mon.name, card.misprint) : null;
+  const printName = (mis && mis.name) || mon.name;
+  const printHp   = mis && mis.hpFactor ? mon.hp * mis.hpFactor : mon.hp;
+  // What actually got foiled, which a foil error makes different from what the
+  // card says it is.
+  const foil = card.foil || card.holo;
 
   const artX=42, artY=136, artW=CARD_W-84, artH=286;
 
@@ -1172,7 +1379,7 @@ function buildCardFace(card, opts){
   // a three-digit HP is wider than the gap that was reserved for it.
   ctx.textBaseline="alphabetic";
   ctx.font="800 40px "+CARD_FONT;
-  const hpNumW = ctx.measureText(String(mon.hp)).width;
+  const hpNumW = ctx.measureText(String(printHp)).width;
   ctx.font="700 17px "+CARD_FONT;
   const hpLabW = ctx.measureText("HP").width;
 
@@ -1188,15 +1395,15 @@ function buildCardFace(card, opts){
   const maxNameW = hpLeft - 42 - 16;
   let nameSize=39;
   ctx.font="800 "+nameSize+"px "+CARD_FONT;
-  while(ctx.measureText(mon.name).width > maxNameW && nameSize>22){
+  while(ctx.measureText(printName).width > maxNameW && nameSize>22){
     nameSize-=1; ctx.font="800 "+nameSize+"px "+CARD_FONT;
   }
   ctx.fillStyle=T.ink;
-  ctx.fillText(mon.name, 42, 106);
+  ctx.fillText(printName, 42, 106);
 
   ctx.textAlign="right";
   ctx.font="800 40px "+CARD_FONT; ctx.fillStyle=T.ink;
-  ctx.fillText(String(mon.hp), hpNumRight, 105);
+  ctx.fillText(String(printHp), hpNumRight, 105);
   ctx.font="700 17px "+CARD_FONT; ctx.fillStyle="rgba(0,0,0,.6)";
   ctx.fillText("HP", hpLabRight, 102);
   ctx.textAlign="left";
@@ -1320,13 +1527,27 @@ function buildCardFace(card, opts){
   const m = document.createElement("canvas"); m.width=CARD_W>>1; m.height=CARD_H>>1;
   const mc = m.getContext("2d"); const s=0.5;
   mc.fillStyle="#000"; mc.fillRect(0,0,m.width,m.height);
-  if(card.holo==="rare"){
-    mc.fillStyle="#fff"; mc.fillRect(artX*s, artY*s, artW*s, artH*s);
-  } else if(card.holo==="reverse"){
-    mc.save(); rr(mc,P*s,P*s,(CARD_W-P*2)*s,(CARD_H-P*2)*s,(R-9)*s); mc.fillStyle="#fff"; mc.fill();
+  // The foil goes onto the sheet before the guillotine does, so a card cut
+  // off-register carries its foil off-register too.
+  const fdx = mis && (mis.kind==="offcut" || mis.kind==="miscut") ? mis.dx : 0;
+  const fdy = mis && (mis.kind==="offcut" || mis.kind==="miscut") ? mis.dy : 0;
+  if(foil==="rare"){
+    mc.fillStyle="#fff"; mc.fillRect((artX+fdx)*s, (artY+fdy)*s, artW*s, artH*s);
+  } else if(foil==="reverse"){
+    mc.save(); rr(mc,(P+fdx)*s,(P+fdy)*s,(CARD_W-P*2)*s,(CARD_H-P*2)*s,(R-9)*s); mc.fillStyle="#fff"; mc.fill();
     mc.globalCompositeOperation="destination-out";
-    mc.fillRect(artX*s, artY*s, artW*s, artH*s);
+    mc.fillRect((artX+fdx)*s, (artY+fdy)*s, artW*s, artH*s);
     mc.restore();
+  }
+  // The sprite rides its own quad in front of the card, so anything that moves
+  // the print has to move the quad with it.
+  card.printShift = null;
+  if(mis){
+    applyMisprintToFace(ctx, c, mis, R, A.c);
+    if(mis.kind==="offcut" || mis.kind==="miscut") card.printShift = {x:mis.dx, y:mis.dy};
+    // One plate out of register: the art goes with the red one, so the sprite
+    // sits off the ink that frames it.
+    else if(mis.kind==="inkshift") card.printShift = {x:-mis.spread, y:mis.skew};
   }
   return {front:c, mask:m, edge:shade(A.d,-0.25)};
 }
@@ -1637,16 +1858,35 @@ function generatePack(){
   const cards=[];
   for(let i=0;i<5;i++) cards.push({mon:draw("C"), holo:"none"});
   for(let i=0;i<3;i++) cards.push({mon:draw("U"), holo:"none"});
-  // reverse holo slot: any common or uncommon
-  cards.push({mon: draw(rng()<0.6?"C":"U"), holo:"reverse"});
+  // Reverse holo slot. It draws from the whole reverse-eligible sheet in
+  // proportion to how many of each tier are on it -- rares included, because a
+  // reverse holo Charizard is a real pull. Restricting the slot to commons and
+  // uncommons made it strictly cheaper than a real one.
+  cards.push({mon: draw(reverseTier(rng())), holo:"reverse"});
   // rare slot, 1 in 3 is a holo
   cards.push({mon: draw("R"), holo: rng()<0.34 ? "rare" : "none"});
-  cards.forEach(c=>{ c.stats = statsFor(c.mon); });
+  cards.forEach(c=>{ c.stats = statsFor(c.mon); c.foil = c.holo; });
+
+  // At most one card in a pack comes off the press wrong.
+  const fault = rollMisprint(rng);
+  if(fault){
+    const victim = cards[Math.floor(rng()*cards.length)];
+    victim.misprint = fault;
+    victim.foil = printedFoil(victim);
+  }
 
   // Randomize the final 10-card order so the sprite images appear
   // in a different order every pack while keeping the same rarity odds.
   shuffle(cards, rng);
   return cards;
+}
+
+// Weighted by how many of each tier are on the sheet: 56 commons, 49
+// uncommons, 46 rares.
+function reverseTier(r){
+  const c = POOL.C.length, u = POOL.U.length, rr_ = POOL.R.length;
+  const n = r * (c + u + rr_);
+  return n < c ? "C" : n < c + u ? "U" : "R";
 }
 
 /* ============================================================
@@ -2280,7 +2520,7 @@ function makeCardMesh(card){
   const frontMat = new THREE.ShaderMaterial({
     uniforms:{
       uMap:{value:tex}, uMask:{value:mask},
-      uTime:{value:0}, uHolo:{value:0}, uGold:{value: card.holo==="rare"?1:0},
+      uTime:{value:0}, uHolo:{value:0}, uGold:{value: (card.foil||card.holo)==="rare"?1:0},
       uTilt:{value:new THREE.Vector2(0,0)}, uEnv:{value: roomEnvTexture()}
     },
     vertexShader:HOLO_VS, fragmentShader:HOLO_FS
@@ -2339,6 +2579,15 @@ function makeCardMesh(card){
     crt.renderOrder = 3;
     mesh.add(crt);
     card.crtMesh = crt;
+
+    // A misprint that moved the print has to move the art with it, or the
+    // sprite stays neatly centred in a window that has slid out from under it.
+    if(card.printShift){
+      const sx =  card.printShift.x * (CARD_MESH_W/CARD_W);
+      const sy = -card.printShift.y * (CARD_MESH_H/CARD_H);
+      spriteMesh.position.x += sx; spriteMesh.position.y += sy;
+      crt.position.x += sx;        crt.position.y += sy;
+    }
   }
   card.mesh = mesh; card.pivot = pivot; card.frontMat = frontMat;
   return pivot;
@@ -2731,11 +2980,18 @@ const Binder = (function(){
     // One pulled card. `finish` is "none" | "reverse" | "rare"; a slot keeps
     // the best finish ever pulled for it, so a later plain copy can't
     // downgrade a holo you already own.
-    record(mon, finish){
+    record(mon, finish, misprint){
       const id = NUMBERS[mon.name];
       if(!id) return;
       const c = data.cards[String(id)] || {n:0, best:"none", first:0};
       c.n++;
+      // Which faults this species has been pulled with, and how many times.
+      // Kept per kind so the binder can rebuild the exact card: every
+      // misprint's parameters come from the name and the kind.
+      if(misprint){
+        if(!c.m) c.m = {};
+        c.m[misprint] = (c.m[misprint] || 0) + 1;
+      }
       // Tally each finish, not just the best one, so duplicates can say what
       // they are rather than only how many. Records written before this
       // existed are backfilled on read.
@@ -2758,15 +3014,16 @@ const Binder = (function(){
     },
     stats(){
       const owned = Object.keys(data.cards).length;
-      let holo = 0, rev = 0, dupes = 0, spare = 0;
+      let holo = 0, rev = 0, dupes = 0, spare = 0, misprints = 0;
       for(const k in data.cards){
         const c = data.cards[k];
         if(c.best === "rare") holo++;
         else if(c.best === "reverse") rev++;
         if(c.n > 1){ dupes++; spare += c.n - 1; }
+        if(c.m) for(const kind in c.m) misprints += c.m[kind];
       }
       return {owned, total:DEX_ORDER.length, packs:data.packs, pulls:data.pulls,
-              holo, rev, dupes, spare, usable};
+              holo, rev, dupes, spare, misprints, usable};
     }
   };
 })();
@@ -2796,7 +3053,8 @@ function renderBinder(){
   const st = Binder.stats();
   // Counts on the chips, so it is obvious whether a filter has anything in it
   // before you tap it.
-  const counts = {all: st.total, owned: st.owned, dupes: st.dupes, holo: st.holo + st.rev};
+  const counts = {all: st.total, owned: st.owned, dupes: st.dupes,
+                  holo: st.holo + st.rev, misprint: st.misprints};
   UI.binderFilters.querySelectorAll(".chip").forEach(ch=>{
     const f = ch.dataset.filter;
     ch.classList.toggle("on", f === binderFilter);
@@ -2809,6 +3067,7 @@ function renderBinder(){
     `<b style="color:var(--paper)">${st.owned}/${st.total}</b> collected · ${pct}% · ` +
     `${st.packs} pack${st.packs===1?"":"s"} opened · ${st.pulls} card${st.pulls===1?"":"s"} pulled` +
     (st.holo ? ` · ${st.holo} holo` : "") +
+    (st.misprints ? ` · ${st.misprints} misprint${st.misprints===1?"":"s"}` : "") +
     (st.usable ? "" : `<br><span style="color:#ffb4a1">Storage is unavailable, so this won't be saved.</span>`);
 
   const frag = document.createDocumentFragment();
@@ -2816,13 +3075,16 @@ function renderBinder(){
   DEX_ORDER.forEach((name, i)=>{
     const id = i+1;
     const have = Binder.get(id);
+    const faults = have && have.m ? Object.keys(have.m) : [];
     if(binderFilter === "owned" && !have) return;
     if(binderFilter === "dupes" && !(have && have.n > 1)) return;
     if(binderFilter === "holo" && !(have && have.best !== "none")) return;
+    if(binderFilter === "misprint" && !faults.length) return;
     shown++;
     const slot = document.createElement("div");
     slot.className = "slot " + (have ? "own" : "miss")
-      + (have && have.best==="rare" ? " holo" : have && have.best==="reverse" ? " rev" : "");
+      + (have && have.best==="rare" ? " holo" : have && have.best==="reverse" ? " rev" : "")
+      + (faults.length ? " mis" : "");
     const no = document.createElement("span");
     no.className = "no"; no.textContent = String(id).padStart(3,"0");
     slot.appendChild(no);
@@ -2845,10 +3107,21 @@ function renderBinder(){
       const nm = document.createElement("span");
       nm.className = "nm"; nm.textContent = name;
       slot.appendChild(nm);
-      if(have.n > 1){
-        const d = document.createElement("span");
-        d.className = "dup"; d.textContent = "x"+have.n;
-        slot.appendChild(d);
+      if(have.n > 1 || faults.length){
+        const badges = document.createElement("span");
+        badges.className = "badges";
+        if(faults.length){
+          const e = document.createElement("span");
+          e.className = "err"; e.textContent = "!";
+          e.title = faults.map(k=>(MISPRINT_BY_KIND[k]||{}).label || k).join(", ");
+          badges.appendChild(e);
+        }
+        if(have.n > 1){
+          const d = document.createElement("span");
+          d.className = "dup"; d.textContent = "x"+have.n;
+          badges.appendChild(d);
+        }
+        slot.appendChild(badges);
       }
       slot.addEventListener("click", ()=>{ Audio2.tap(); showBinderDetail(id, name, have); });
     }
@@ -2862,6 +3135,8 @@ function renderBinder(){
       ? "No duplicates yet. Pull the same Pokémon twice and it will show up here."
       : binderFilter === "holo"
         ? "No holos yet. Every pack has a reverse holo, and about one in three has a holo rare."
+      : binderFilter === "misprint"
+        ? "No misprints yet. About one pack in twelve holds a card that came off the press wrong."
         : "Nothing here yet.";
     grid.appendChild(empty);
   }
@@ -2910,7 +3185,7 @@ function frameBinderCard(camera, w, h){
   camera.updateProjectionMatrix();
 }
 
-function openBinderCard(mon, finish){
+function openBinderCard(mon, finish, misprint){
   closeBinderCard();
   const host = UI.binderStage;
   host.innerHTML = "";
@@ -2929,10 +3204,11 @@ function openBinderCard(mon, finish){
   const camera = new THREE.PerspectiveCamera(36, w/h, 0.1, 100);
   frameBinderCard(camera, w, h);
 
-  const card = {mon, stats: statsFor(mon), holo: finish};
+  const card = {mon, stats: statsFor(mon), holo: finish, misprint: misprint || null};
+  card.foil = printedFoil(card);
   const pivot = makeCardMesh(card);
   scene.add(pivot);
-  card.frontMat.uniforms.uHolo.value = finish === "none" ? 0 : 1;
+  card.frontMat.uniforms.uHolo.value = card.foil === "none" ? 0 : 1;
 
   const view = {renderer, scene, camera, pivot, card, raf:0,
                 edgeMat: card.mesh && card.mesh.material && card.mesh.material[2],
@@ -2978,8 +3254,13 @@ function openBinderCard(mon, finish){
 function showBinderDetail(id, name, have){
   const meta = window.SPRITE_META && window.SPRITE_META[id];
   const mon = MON_BY_NAME[name];
+  const faults = have.m ? Object.keys(have.m) : [];
   UI.binderDetail.hidden = false;
-  if(mon) openBinderCard(mon, have.best);
+  // Show the misprinted copy if there is one -- it is the interesting card in
+  // the slot, and every parameter comes from the name and the kind, so this is
+  // the same card that came out of the pack.
+  const shownFoil = printedFoil({holo: have.best, misprint: faults[0] || null});
+  if(mon) openBinderCard(mon, have.best, faults[0] || null);
 
   const when = have.first ? new Date(have.first).toLocaleDateString() : "";
   // What the copies actually are, not just how many.
@@ -2992,8 +3273,18 @@ function showBinderDetail(id, name, have){
     + (meta && meta.genus ? ` · ${meta.genus}` : "")
     + `<br>${have.n} ${have.n===1?"copy":"copies"}${when ? " · first on "+when : ""}`
     + (copies ? `<div class="copies">${copies}</div>` : "")
-    + (have.best !== "none"
-        ? `<div class="copies" style="color:${have.best==="rare"?"var(--gold)":"var(--foil)"}">`
+    + (faults.length
+        ? `<div class="copies" style="color:var(--red)">`
+          + faults.map(k=>{
+              const info = MISPRINT_BY_KIND[k] || {label:k, blurb:"came off the press wrong"};
+              const n = have.m[k];
+              return `${info.label.toLowerCase()} — ${info.blurb}${n>1?` (×${n})`:""}`;
+            }).join("<br>")
+          + `</div>`
+        : "")
+    // The copy on show may be the one whose foil layer went missing.
+    + (shownFoil !== "none"
+        ? `<div class="copies" style="color:${shownFoil==="rare"?"var(--gold)":"var(--foil)"}">`
           + `Drag the card to move the foil</div>`
         : "");
 
@@ -3023,17 +3314,19 @@ function flipCurrent(){
     card.pivot.rotation.y = lerp(Math.PI, 0, k);
     card.pivot.position.z = Math.sin(k*Math.PI)*0.5;
     card.pivot.scale.setScalar(1 + Math.sin(k*Math.PI)*0.07);
-    card.frontMat.uniforms.uHolo.value = card.holo==="none" ? 0 : clamp((k-0.45)/0.45,0,1);
+    card.frontMat.uniforms.uHolo.value = (card.foil||card.holo)==="none" ? 0 : clamp((k-0.45)/0.45,0,1);
     if(!celebrated && k>0.55 && card.holo!=="none"){ celebrated=true; celebrate(card); }
   }, easeInOut, ()=>{
     card.revealed=true;
-    Binder.record(card.mon, card.holo);
-    card.frontMat.uniforms.uHolo.value = card.holo==="none"?0:1;
+    Binder.record(card.mon, card.holo, card.misprint);
+    card.frontMat.uniforms.uHolo.value = (card.foil||card.holo)==="none"?0:1;
+    if(card.misprint) announceMisprint(card);
     Motion.recentre();
     updatePips();
-    setHint(index===cards.length-1
-      ? "<b>Drag to tilt</b> · tap to see your pull"
-      : "<b>Drag to tilt</b> · tap for the next card");
+    const next = index===cards.length-1 ? "tap to see your pull" : "tap for the next card";
+    setHint(card.misprint
+      ? `<b>Misprint</b> — ${misprintSpec(card.mon.name, card.misprint).blurb} · ${next}`
+      : `<b>Drag to tilt</b> · ${next}`);
   });
   updatePips();
 }
@@ -3047,6 +3340,18 @@ function celebrate(card){
   UI.bannerSub.textContent = card.mon.name.toUpperCase();
   UI.banner.classList.add("on");
   setTimeout(()=>UI.banner.classList.remove("on"), rare?2100:1500);
+}
+
+// A misprint looks exactly like a rendering bug unless the page says otherwise,
+// so it gets the same announcement a holo does.
+function announceMisprint(card){
+  const spec = misprintSpec(card.mon.name, card.misprint);
+  Audio2.holo("reverse");
+  if(navigator.vibrate) navigator.vibrate([15,30,15,30,15]);
+  UI.bannerBig.textContent = "MISPRINT";
+  UI.bannerSub.textContent = spec.label;
+  UI.banner.classList.add("on");
+  setTimeout(()=>UI.banner.classList.remove("on"), 2300);
 }
 
 function nextCard(){
@@ -3102,13 +3407,19 @@ function flattenCardFace(card){
   const x = flatScratch.getContext("2d");
   x.clearRect(0,0,CARD_W,CARD_H);
   x.drawImage(card.frontCanvas, 0, 0);
-  if(card.art) x.drawImage(card.art.canvas, card.art.x, card.art.y);
+  // The sprite follows the print, so a misprint that shifted the face has to
+  // shift it here too -- otherwise the summary thumbnail shows a centred
+  // sprite in a window that has slid away from it.
+  if(card.art){
+    const sh = card.printShift || {x:0, y:0};
+    x.drawImage(card.art.canvas, card.art.x + sh.x, card.art.y + sh.y);
+  }
   return flatScratch;
 }
 
 function renderSummary(){
   UI.grid.innerHTML="";
-  let holos=0, reverses=0;
+  let holos=0, reverses=0, misprinted=null;
   cards.forEach(card=>{
     const d=document.createElement("div");
     d.className="thumb"+(card.holo==="rare"?" hit":card.holo==="reverse"?" rev":"");
@@ -3136,12 +3447,23 @@ function renderSummary(){
     } else if(card.mon.rarity==="R"){
       const t=document.createElement("span"); t.className="tag"; t.textContent="RARE"; d.appendChild(t);
     }
+    if(card.misprint){
+      const t=document.createElement("span");
+      t.className="tag m"; t.textContent="MISPRINT";
+      d.appendChild(t);
+      misprinted = card;
+    }
     UI.grid.appendChild(d);
   });
   const rare = cards.find(c=>c.mon.rarity==="R");
-  UI.sumLede.textContent = holos
+  const lede = holos
     ? `${rare.mon.name} came out holo. That is roughly a one-in-three pack.`
     : `Your rare this pack is ${rare.mon.name}. ${reverses?"The reverse holo is "+cards.find(c=>c.holo==="reverse").mon.name+".":""}`;
+  // The misprint leads if there is one: it is the rarer thing in the pack.
+  UI.sumLede.textContent = misprinted
+    ? `${misprinted.mon.name} is a misprint — ${misprintSpec(misprinted.mon.name, misprinted.misprint).blurb}. `
+      + `About one pack in twelve has one.`
+    : lede;
   UI.summary.classList.add("on");
   setHint("");
 }
@@ -3467,6 +3789,39 @@ window.__back = function(){ return buildCardBack().toDataURL("image/png"); };
 // artwork finishes loading.
 window.__packScale = function(){ return packGroup ? packGroup.scale.x : 0; };
 // Test hook: every sprite's on-card magnification, without rendering 151 cards.
+// Test hooks for the press faults: render one flat for the misprint sheet, read
+// a card's fault parameters, and list the kinds.
+window.__misprints = {
+  kinds: MISPRINTS.map(m=>m.kind),
+  spec(name, kind){ return misprintSpec(name, kind); },
+  render(name, kind, holo){
+    const mon = MON_BY_NAME[name];
+    if(!mon) return null;
+    const card = {mon, stats:statsFor(mon), holo: holo || "none", misprint: kind || null};
+    card.foil = printedFoil(card);
+    return buildCardFace(card, {flatSprite:true}).front.toDataURL("image/png");
+  }
+};
+// Test hook: pack odds over many packs, aggregated in the page so the harness
+// does not pay a round trip each. Reports anything malformed rather than
+// leaving the caller to re-derive the invariants.
+window.__packOdds = function(n){
+  n = n || 20000;
+  const kinds = {}, tiers = {};
+  let faults = 0, holo = 0, malformed = 0;
+  for(let i=0;i<n;i++){
+    const pack = generatePack();
+    if(pack.length !== 10) malformed++;
+    const bad = pack.filter(c=>c.misprint);
+    if(bad.length > 1) malformed++;
+    if(bad.length){ faults++; kinds[bad[0].misprint] = (kinds[bad[0].misprint]||0) + 1; }
+    const rev = pack.filter(c=>c.holo === "reverse");
+    if(rev.length !== 1) malformed++;
+    else tiers[rev[0].mon.rarity] = (tiers[rev[0].mon.rarity]||0) + 1;
+    if(pack.some(c=>c.holo === "rare")) holo++;
+  }
+  return {n, faults, kinds, tiers, holo, malformed};
+};
 window.__spriteScales = function(){
   const artW = CARD_W-84, artH = 286;
   const boxW = artW - SPRITE_PAD*2, boxH = artH - SPRITE_PAD*2;

@@ -10,6 +10,8 @@ const SEED = {
     "25":  { n: 2, best: "reverse", f: { reverse: 1, none: 1 } },
     "9":   { n: 1, best: "none",    f: { none: 1 } },
     "150": { n: 1, best: "rare",    f: { rare: 1 } },
+    "94":  { n: 1, best: "none",    f: { none: 1 }, m: { inkshift: 1 } },  // a misprint
+    "143": { n: 2, best: "rare",    f: { rare: 1, none: 1 }, m: { foil: 1 } }, // and a misprinted duplicate
   },
 };
 
@@ -52,17 +54,18 @@ module.exports = async function binder() {
     await page.waitForTimeout(1200);
 
     const counts = {};
-    for (const filter of ["all", "dupes", "holo"]) {
+    for (const filter of ["all", "dupes", "holo", "misprint"]) {
       const chip = await page.$(`.chip[data-filter="${filter}"]`);
       if (!chip) { failures.push(`no "${filter}" filter chip`); continue; }
       await chip.click();
       await page.waitForTimeout(700);
       counts[filter] = await page.evaluate(() => document.querySelectorAll(".slot.own").length);
     }
-    if (counts.all !== 4) failures.push(`four species were seeded, the grid showed ${counts.all} collected`);
-    if (counts.dupes !== 2) failures.push(`two species have duplicates, the dupes filter showed ${counts.dupes}`);
+    if (counts.all !== 6) failures.push(`six species were seeded, the grid showed ${counts.all} collected`);
+    if (counts.dupes !== 3) failures.push(`three species have duplicates, the dupes filter showed ${counts.dupes}`);
     // "Holos" means any finish other than plain, so the reverse holo counts too.
-    if (counts.holo !== 3) failures.push(`three species have a foil finish, the holo filter showed ${counts.holo}`);
+    if (counts.holo !== 4) failures.push(`four species have a foil finish, the holo filter showed ${counts.holo}`);
+    if (counts.misprint !== 2) failures.push(`two species were seeded with a misprint, the filter showed ${counts.misprint}`);
     notes.push(`filters: ${JSON.stringify(counts)}`);
 
     // The detail view renders its own WebGL card; opening it repeatedly must
@@ -84,6 +87,25 @@ module.exports = async function binder() {
     const meta = await page.evaluate(() => document.getElementById("binderMeta").innerText);
     if (!/holo|rare/i.test(meta)) failures.push(`binder detail did not mention the holo finish: ${JSON.stringify(meta)}`);
     notes.push(`detail meta: ${meta.replace(/\n/g, " | ")}`);
+
+    // Opening a misprint rebuilds it from the name and the kind alone, so the
+    // card in the binder has to be the card that came out of the pack.
+    await page.click("#binderActions .cta");     // the detail view is still up
+    await page.waitForTimeout(400);
+    await page.click('.chip[data-filter="misprint"]');
+    await page.waitForTimeout(600);
+    const mis = await page.$(".slot.own");
+    await mis.click();
+    await page.waitForTimeout(1500);
+    const misMeta = await page.evaluate(() => document.getElementById("binderMeta").innerText);
+    if (!/registration|foil error/i.test(misMeta)) failures.push(`binder detail did not name the fault: ${JSON.stringify(misMeta)}`);
+    const twice = await page.evaluate(() => {
+      const a = window.__misprints.spec("Gengar", "inkshift");
+      const b = window.__misprints.spec("Gengar", "inkshift");
+      return JSON.stringify(a) === JSON.stringify(b);
+    });
+    if (!twice) failures.push("a misprint's parameters are not stable, so the binder cannot rebuild the card you pulled");
+    notes.push(`misprint detail: ${misMeta.replace(/\n/g, " | ")}`);
 
     if (errors.length) failures.push(`page errors: ${errors.slice(0, 3).join(" | ")}`);
     return { failures, notes };

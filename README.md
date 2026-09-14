@@ -144,12 +144,59 @@ Rough sizes: showdown at 30 frames is ~4.1 MB across 151 sheets; `gen1` stills
 are ~128 KB. Since the bundle loads in the background, its size costs you how
 long the fallback art is on screen, not how long the page takes to start.
 
+## Odds
+
+A pack is ten cards: five commons, three uncommons, one reverse holo and one
+rare, with a holo in the rare slot about one pack in three.
+
+The reverse holo slot draws from the whole reverse-eligible sheet in proportion
+to how many of each tier is on it — 56 commons, 49 uncommons, 46 rares — so it
+comes out common 37% of the time, uncommon 32% and rare 30%, which puts a
+reverse holo rare at about one pack in 3.3. It used to be 60% common / 40%
+uncommon with rares excluded outright, which made a reverse holo Charizard
+impossible and the slot strictly cheaper than a real one.
+
+Two caveats on "real". The Pokémon Company has never published pull rates, so
+the one-in-three figure is community aggregation rather than an official
+number. And the eras are mixed: the pack and the card faces are styled after
+Base Set, which was eleven cards with no reverse holos at all — they arrived
+with Legendary Collection in 2002. The ten-card layout with a single reverse is
+the modern structure.
+
+## Misprints
+
+About one pack in twelve carries a card that came off the press wrong. Each
+fault is something that happens to real cards, and at most one card per pack
+has one.
+
+| Fault | Share of misprints | What it looks like |
+| --- | --- | --- |
+| Off-centre cut | 33% | The print sits 10–22px off inside the cut, with a sliver of the next card on the sheet along one or two edges. |
+| Ink registration | 15% | The three plates are laid down 3–7px apart, so every edge on the card carries a colour fringe. |
+| Double strike | 13% | The whole card printed twice, a few pixels apart. |
+| Factory crimp | 11% | A toothed band pressed across the card by the wrapping machine. |
+| Foil error | 10% | The foil layer went on the wrong card: a HOLO RARE with no foil on it, or a plain common that shimmers. |
+| Text error | 10% | A doubled, dropped or transposed letter in the name, or an HP an order of magnitude out. |
+| Miscut | 6% | Cut 44–86px wrong, clean into the neighbouring card. |
+
+Everything except the text error is applied to the finished card face rather
+than woven into the layout, because a press fault happens to the whole card at
+once, after everything is on it. Anything that moves the print moves the sprite
+quad and the foil mask with it — the foil goes onto the sheet before the
+guillotine does.
+
+Every parameter comes from `mulberry32(hashStr(name + "·misprint·" + kind))`,
+so the binder rebuilds the exact card you pulled from nothing but the species
+and the kind of fault. A misprint is announced on reveal, tagged in the pack
+summary, and has its own filter in the binder.
+
 ## Tests
 
 `tests/` drives a real Chromium against the page: boot with no network, the
 pack's entrance and tear, the audio state machine (including a stubbed context
-that refuses to open), the binder's storage and filters, and an audit of all
-151 sprite scales. See [tests/README.md](tests/README.md).
+that refuses to open), the binder's storage and filters, an audit of all 151
+sprite scales, and the pack odds over 40,000 packs. See
+[tests/README.md](tests/README.md).
 
 ```sh
 cd tests && npm install && node run.js

@@ -25,6 +25,7 @@ which also means the frame rates it can measure are not worth anything.
 | `audio` | The context opens on a gesture and sounds actually schedule; against a stubbed `AudioContext` that refuses to run, the button reports it and every gesture retries. |
 | `binder` | A real pack is recorded to `localStorage` with per-finish tallies, the filters count correctly, and reopening a card does not leak a WebGL canvas per open. |
 | `sprites` | Audits all 151 sprite scales at once: nothing magnified past the cap, nothing drawn below 1×. |
+| `odds` | 40,000 packs through the real generator: holo rate, the reverse slot's tier split, the misprint rate and spread, and that no pack is malformed. |
 
 `contact-sheet.js` is not a test — it renders card art windows into one PNG so a
 change to the scenes, the dither or the sprite scaling can be eyeballed side by
@@ -32,6 +33,14 @@ side:
 
 ```sh
 node contact-sheet.js out.png Onix Mewtwo Gengar
+```
+
+`misprint-sheet.js` is the same idea for the press faults — one card per kind,
+plus a clean control:
+
+```sh
+node misprint-sheet.js out.png          # one Pokemon per fault
+node misprint-sheet.js out.png Onix     # every fault on the same one
 ```
 
 ## Writing one
@@ -49,4 +58,5 @@ line is the only reliable ready signal), `dragTearStrip()`, `openPack()` and
 
 The page exposes a few hooks for these tests, all named `__`:
 `window.__packScale()`, `window.__spriteScales()`, `window.__sheet(names)`,
-`window.__back()` and `window.__audio()`.
+`window.__back()`, `window.__audio()`, `window.__packOdds(n)` and
+`window.__misprints` (`.kinds`, `.spec(name, kind)`, `.render(name, kind, holo)`).
